@@ -13,7 +13,7 @@ O `aya-expo-tools` é o sistema primário — roda no media server, guia a monta
 O Portal AYA é visibilidade e controle remoto — bônus quando há conexão, nunca requisito.
 
 **Conhecimento embutido.** O sistema carrega o saber de como montar uma expo AYA.
-Setup wizard guia qualquer membro da equipe passo a passo, sem depender de tutoria do Ihon.
+Commissioning verifica cada subsistema passo a passo, sem depender de tutoria presencial.
 
 ---
 
@@ -22,226 +22,315 @@ Setup wizard guia qualquer membro da equipe passo a passo, sem depender de tutor
 ```
 aya-expo-tools (LOCAL — media server)
   │
-  ├── /setup          ← wizard de montagem e configuração
-  ├── /               ← dashboard de operação (projetores, câmeras, rede)
+  ├── /               ← dashboard de operação
+  ├── /server.html    ← saúde do servidor (CPU, GPU, temp, Resolume)
+  ├── /cv.html        ← visão computacional ao vivo
+  ├── /report.html    ← relatórios de público
   │
-  ├── Módulos (ativados por config de cada expo)
-  │   ├── PJLink      ← controle de projetores
-  │   ├── Câmeras     ← RTSP / HTTP snapshot (Intelbras, Hikvision, Dahua)
-  │   ├── Rede        ← scan de dispositivos, health check
-  │   ├── Áudio       ← soundbar ou interface de áudio
-  │   ├── DMX         ← ArtNet / iluminação (quando aplicável)
-  │   ├── Smart Plugs ← tomadas inteligentes (NovaDigital, Tuya)
-  │   ├── Servidor    ← health do media server (CPU, GPU, temp, Resolume)
-  │   └── Scheduler   ← cron liga/desliga automático
+  ├── Módulos (server/)
+  │   ├── pjlink.js       ← projetores (PJLink Class 1)
+  │   ├── cameras.js      ← RTSP/HTTP snapshot (Intelbras, Hikvision, Dahua)
+  │   ├── tv.js            ← Hisense/Chromecast (Cast, WOL, volume)
+  │   ├── audio.js         ← volume master do Windows (Core Audio API, dB)
+  │   ├── network.js       ← scan de dispositivos, health check
+  │   ├── scheduler.js     ← cron liga/desliga com sequência completa
+  │   ├── server-health.js ← CPU, GPU, RAM, temp, Resolume, disco
+  │   ├── cv.js            ← orquestrador de visão computacional
+  │   ├── cv-logger.js     ← gravação de dados de ocupação
+  │   ├── cv-report.js     ← relatórios diários/semanais/mensais
+  │   ├── timelapse.js     ← captura periódica de câmeras
+  │   ├── portal-sync.js   ← WebSocket push → Portal AYA
+  │   ├── commissioning.js ← verificação automatizada de subsistemas
+  │   └── loop-generator.js← geração de loops de vídeo para TVs
   │
-  └── Portal Sync (quando internet disponível)
-      ├── WebSocket persistente → Portal AYA
-      ├── Heartbeat 30s → status de todos os dispositivos
-      ├── Snapshots de câmera → visão remota
-      └── Comandos recebidos → PJLink, scheduler, diagnóstico
+  └── CV (cv/)
+      ├── detector.py  ← YOLO v8 — detecção de pessoas por câmera
+      └── counter.py   ← contagem de entradas/saídas por linha de cruzamento
 
 Portal AYA (REMOTO — portal.aya.cx)
-  ├── /dashboard/expo         ← todas as expos ativas (Beleza Astral + Farol Viajante...)
-  ├── /dashboard/expo/[slug]  ← expo específica: câmeras, projetores, status, comandos
-  └── Alertas Telegram        ← Ihon + Minhoso notificados quando algo quebra
+  ├── /dashboard/expo         ← todas as expos ativas
+  ├── /dashboard/expo/[slug]  ← controle: projetores, TVs, volumes, câmeras, CV
+  └── /dashboard/expo/[slug]/publico ← dados de público e heatmaps
 ```
 
 ---
 
-## Contextos suportados
+## Expo em produção
 
-| Tipo | Exemplos | Módulos ativos |
-|------|----------|----------------|
-| Sala imersiva fixa | Beleza Astral (Farol Santander) | PJLink + câmeras + soundbar + smart plugs |
-| Expo mobile | Sombras Milenares POA | PJLink + câmeras + DMX + interface áudio + 4G |
-| Itinerante com Starlink | Farol Viajante | PJLink + câmeras + Starlink monitoring |
-| Com iluminação DMX | qualquer expo com LEDs | + DMX / ArtNet |
-| Multi-servidor | expos com SHOW + BKP | + health de múltiplos servidores |
+### Beleza Astral — Farol Santander SP (mar/2026)
 
----
+| Componente | Quantidade | Protocolo |
+|------------|-----------|-----------|
+| Projetores NEC PE456USL | 6 | PJLink |
+| Câmeras Intelbras iMD 3C | 4 | RTSP |
+| TVs Hisense 55A51HUA | 2 | Google Cast (Ethernet) |
+| Soundbars JBL + Sub | 3 zonas | Analógico (volume via Core Audio) |
+| Smart Plugs NovaDigital | 6+ | Tuya |
+| Internet | 4G | 60GB/mês |
+| GPU CV | GTX 1080 Ti (GPU 1) | YOLO v8m |
 
-## Tipos de internet
-
-| Tipo | Config |
-|------|--------|
-| `4g` | modem LTE — padrão na maioria das expos |
-| `starlink` | Farol Viajante e expos itinerantes de grande porte |
-| `venue` | FIESP e venues que fornecem link próprio |
+**Docs específicos:**
+- `docs/AUDIO-DRIVER-QUIRK.md` — driver Creative ignora API escalar de volume
+- `docs/CHANGELOG-2026-03-24.md` — migração TVs WiFi→Ethernet, fix de áudio
 
 ---
 
 ## Setup Rápido
 
 ```bash
-# Clonar no media server
 git clone https://github.com/sztlink/aya-expo-tools.git
 cd aya-expo-tools
-
-# Instalar (ou dar dois cliques em install.bat)
 npm install
-
-# Iniciar
 npm start
 ```
 
 Abre `http://localhost:3000` no browser.
-Na primeira vez, o wizard de setup é iniciado automaticamente.
 
 ---
 
-## Configuração por exposição
+## Configuração
 
-Cada exposição tem seu arquivo em `config/`:
+Cada exposição tem seu arquivo em `config/<slug>.json`.
+Exemplo: `config/beleza-astral.json`.
+
+Módulos são ativados por config:
 
 ```json
 {
-  "exhibition": {
-    "name": "Beleza Astral",
-    "venue": "Farol Santander",
-    "city": "São Paulo",
-    "slug": "beleza-astral"
-  },
   "modules": {
-    "projectors":   { "enabled": true, "protocol": "pjlink" },
-    "cameras":      { "enabled": true, "protocol": "rtsp" },
-    "internet":     { "enabled": true, "type": "4g" },
-    "audio":        { "enabled": true, "type": "soundbar" },
-    "dmx":          { "enabled": false },
-    "smartplugs":   { "enabled": true, "protocol": "novadigital" },
-    "mediaserver":  { "enabled": true }
-  },
-  "network": {
-    "subnet": "192.168.0.0/24",
-    "gateway": "192.168.0.1",
-    "mediaServer": "192.168.0.13"
-  },
-  "projectors": [
-    { "id": "proj-1", "name": "Projetor 1", "ip": "192.168.0.20", "model": "NEC NP-PE456USL" }
-  ],
-  "cameras": [
-    { "id": "cam-1", "name": "Câmera 1", "ip": "192.168.0.30", "model": "Intelbras iMD 3C" }
-  ],
-  "schedule": {
-    "enabled": true,
-    "powerOn": "09:00",
-    "powerOff": "20:00"
-  },
-  "portal": {
-    "url": "https://192.168.15.169:3000",
-    "apiKey": ""
+    "projectors": true,
+    "cameras": true,
+    "audio": true,
+    "smartplugs": true,
+    "tvs": true,
+    "dmx": false,
+    "resolume": true
   }
 }
 ```
 
 ---
 
-## Setup Wizard — fluxo de montagem
+## Scheduler — sequência de abertura/fechamento
 
-```
-localhost:3000/setup
+### Abertura
+1. Verifica se Resolume está pronto (GPU > 20%)
+2. WOL nas TVs → espera boot (30s)
+3. Cast vídeos nas TVs
+4. Liga projetores (PJLink)
+5. Restaura volume ambiente (80%)
 
-① Expo          → seleciona ou cria config (nome, local, tipo)
-② Rede          → scan automático, confirma IPs, identifica gateway
-③ Projetores    → testa PJLink um a um, confirma modelo e input
-④ Câmeras       → verifica RTSP, mostra snapshot de confirmação
-⑤ Áudio         → tipo: soundbar / interface; testa conexão
-⑥ DMX           → se aplicável: ArtNet, universos, dispositivos
-⑦ Smart Plugs   → tomadas inteligentes, confirma controle
-⑧ Internet      → tipo: 4G / Starlink / venue; mede latência
-⑨ Servidor      → specs do media server, versões de SW instalado
-⑩ Checklist     → tudo verde? expo pronta para abrir
+### Fechamento
+1. Desliga projetores (PJLink)
+2. Para cast nas TVs
+3. Zera volume ambiente
+
+Suporta horários por dia da semana:
+```json
+{
+  "schedule": {
+    "enabled": true,
+    "timezone": "America/Sao_Paulo",
+    "days": {
+      "mon": null,
+      "tue": { "open": "09:00", "close": "20:00" },
+      "wed": { "open": "09:00", "close": "20:00" }
+    }
+  }
+}
 ```
+
+---
+
+## Visão Computacional
+
+Roda na GPU 1 (GTX 1080 Ti) com YOLO v8m.
+
+| Feature | Status |
+|---------|--------|
+| Detecção de pessoas por câmera | ✅ |
+| Contagem entradas/saídas (linha de cruzamento) | ✅ |
+| Heatmaps de ocupação | ✅ |
+| Zonas configuráveis (sala, galeria, corredor, entrada) | ✅ |
+| Estratégia `max` (câmeras sobrepostas) e `sum` (distintas) | ✅ |
+| Relatórios diários/semanais/mensais | ✅ |
+| Timelapse por câmera | ✅ |
+| Push de dados para Portal AYA | ✅ |
 
 ---
 
 ## API
 
+### Projetores
 | Método | Endpoint | Ação |
 |--------|----------|------|
-| GET | `/api/health` | Status geral de todos os módulos |
 | GET | `/api/projectors` | Lista projetores e status |
 | POST | `/api/projectors/all/on` | Liga todos |
 | POST | `/api/projectors/all/off` | Desliga todos |
-| POST | `/api/projectors/:id/on` | Liga um projetor |
-| POST | `/api/projectors/:id/off` | Desliga um projetor |
+| POST | `/api/projectors/:id/on` | Liga um |
+| POST | `/api/projectors/:id/off` | Desliga um |
+| POST | `/api/projectors/:id/input` | Troca input |
+| POST | `/api/projectors/poll` | Força poll de status |
+
+### TVs
+| Método | Endpoint | Ação |
+|--------|----------|------|
+| GET | `/api/tv` | Lista TVs e status |
+| POST | `/api/tv/all/on` | WOL em todas |
+| POST | `/api/tv/all/cast` | Cast vídeo em todas |
+| POST | `/api/tv/all/stop` | Para cast em todas |
+| POST | `/api/tv/:id/on` | WOL individual |
+| POST | `/api/tv/:id/cast` | Cast individual |
+| POST | `/api/tv/:id/stop` | Para cast individual |
+| POST | `/api/tv/:id/volume` | Volume individual |
+| GET | `/api/tv/loops` | Status dos loops ativos |
+
+### Áudio
+| Método | Endpoint | Ação |
+|--------|----------|------|
+| GET | `/api/audio/volume` | Volume atual |
+| POST | `/api/audio/volume` | Define volume (body: `{level: 0-100}`) |
+
+### Câmeras
+| Método | Endpoint | Ação |
+|--------|----------|------|
 | GET | `/api/cameras` | Lista câmeras e status |
 | GET | `/api/cameras/:id/snapshot` | JPEG snapshot |
-| POST | `/api/network/scan` | Escaneia subnet |
-| GET | `/api/schedule` | Status da agenda |
-| POST | `/api/schedule` | Atualiza liga/desliga |
-| GET | `/api/server/health` | CPU, GPU, RAM, temp, uptime |
-| GET | `/api/cv/status` | Status do detector CV |
-| GET | `/api/cv/count` | Contagem atual de pessoas |
-| GET | `/api/cv/detections` | Detecções completas (bounding boxes) |
+| GET | `/api/cameras/:id/stream` | MJPEG stream |
+| POST | `/api/cameras/check` | Força verificação |
+
+### Rede
+| Método | Endpoint | Ação |
+|--------|----------|------|
+| POST | `/api/network/scan` | Scan da subnet |
+| GET | `/api/network/internet` | Teste de conectividade |
+| GET | `/api/discover/subnet` | Dispositivos na rede |
+| GET | `/api/discover/mac` | MAC lookup |
+
+### Servidor
+| Método | Endpoint | Ação |
+|--------|----------|------|
+| GET | `/api/server/health` | CPU, GPU, RAM, temp, Resolume |
+| GET | `/api/server/history` | Histórico de métricas |
+| GET | `/api/server/alerts` | Alertas ativos |
+| GET | `/api/server/logs/:date` | Logs por dia |
+
+### Visão Computacional
+| Método | Endpoint | Ação |
+|--------|----------|------|
+| GET | `/api/cv/status` | Status do detector |
+| GET | `/api/cv/count` | Contagem atual |
+| GET | `/api/cv/detections` | Detecções (bounding boxes) |
 | GET | `/api/cv/heatmap` | Heatmap acumulado (PNG) |
-| GET | `/api/cv/frame` | Frame anotado com detecções (JPEG) |
-| POST | `/api/cv/start` | Inicia detector CV |
-| POST | `/api/cv/stop` | Para detector CV |
-| POST | `/api/cv/heatmap/reset` | Reseta heatmap acumulado |
-| WS | `/ws` | WebSocket — sync com Portal AYA |
+| GET | `/api/cv/frame` | Frame anotado (JPEG) |
+| GET | `/api/cv/counter` | Status do counter |
+| GET | `/api/cv/daily/today/summary` | Resumo do dia |
+| GET | `/api/cv/report/last7` | Relatório últimos 7 dias |
+| GET | `/api/cv/report/last30` | Relatório últimos 30 dias |
+| POST | `/api/cv/start` | Inicia detector |
+| POST | `/api/cv/stop` | Para detector |
+| POST | `/api/cv/heatmap/reset` | Reseta heatmap |
+
+### Schedule
+| Método | Endpoint | Ação |
+|--------|----------|------|
+| GET | `/api/schedule` | Status e agenda |
+| POST | `/api/schedule` | Atualiza config |
+| POST | `/api/schedule/open` | Executa abertura manual |
+| POST | `/api/schedule/close` | Executa fechamento manual |
+
+### Timelapse
+| Método | Endpoint | Ação |
+|--------|----------|------|
+| GET | `/api/timelapse/dates` | Datas disponíveis |
+| GET | `/api/timelapse/:date/cameras` | Câmeras com frames |
+| GET | `/api/timelapse/:date/:camId/frames` | Lista frames |
+| GET | `/api/timelapse/:date/:camId/at/:time` | Frame mais próximo |
+
+### Sistema
+| Método | Endpoint | Ação |
+|--------|----------|------|
+| GET | `/api/health` | Health check geral |
+| GET | `/api/info` | Info da expo |
+| GET | `/api/config` | Config atual |
+| PUT | `/api/config` | Atualiza config |
+| GET | `/api/session` | Sessão ativa |
+| POST | `/api/session/start` | Inicia sessão local |
+| POST | `/api/session/end` | Encerra sessão local |
+| GET | `/api/log` | Log de eventos |
+| POST | `/api/log` | Adiciona entrada |
+| GET | `/api/commissioning/steps` | Steps de verificação |
+| POST | `/api/commissioning/run` | Roda verificação completa |
 
 ---
 
 ## Equipamentos compatíveis
 
-**Projetores (PJLink Class 1, porta 4352)**
+**Projetores** — PJLink Class 1 (porta 4352)
 NEC PE456USL · PE506UL · Epson EB-series · Panasonic PT-series · Christie · Barco
 
-**Câmeras (RTSP + HTTP snapshot)**
+**Câmeras** — RTSP + HTTP snapshot
 Intelbras iMD 3C · VHD series · Hikvision DS-series · Dahua IPC-series
 
-**Áudio**
-Soundbars JBL (monitoramento de rede) · Interface de áudio + caixas passivas
+**TVs** — Google Cast (porta 8009)
+Hisense 55A51HUA (VIDAA, Chromecast built-in) · qualquer Chromecast-compatible
 
-**Smart Plugs**
-NovaDigital (protocolo a definir) · Tuya-compatible
+**Áudio** — Windows Core Audio API (dB)
+Saída analógica P2 · qualquer dispositivo de áudio do Windows
+⚠️ Alguns chips (Creative VEN_1102) não suportam API escalar — ver `docs/AUDIO-DRIVER-QUIRK.md`
+
+**Smart Plugs** — Tuya protocol
+NovaDigital · qualquer plug Tuya-compatible
 
 ---
 
 ## Roadmap
 
-### v1.0 — atual ✅
-- PJLink engine (NEC PE456USL)
-- Camera manager (RTSP/HTTP)
-- Network scanner
-- Scheduler (cron)
-- Web GUI com tema AYA
+### Implementado ✅
+- PJLink engine (liga/desliga/input/status/poll)
+- Camera manager (RTSP/HTTP, snapshot, stream, check)
+- TV manager (WOL, Cast, volume, loop monitor)
+- Audio volume (Core Audio API em dB, compatível com todos os drivers)
+- Network scanner + discovery
+- Scheduler com sequência completa (open/close por dia da semana)
+- Server health (CPU, GPU, RAM, temp, disco, Resolume)
+- Visão computacional (YOLO v8m, multi-câmera, zonas, counter, heatmap)
+- Relatórios de público (diário, semanal, mensal)
+- Timelapse por câmera
+- Portal sync (WebSocket push, comandos remotos, SSE)
+- Commissioning (verificação automatizada de subsistemas)
+- Web GUI com dashboard operacional
+- Config modular por expo
 
-### v2.0 — em desenvolvimento
-- [ ] Setup wizard (fluxo guiado de montagem)
-- [ ] Config modular por tipo de expo
-- [ ] Monitor de saúde do servidor (CPU/GPU/temp/Resolume)
-- [ ] Smart plugs NovaDigital
-- [ ] WebSocket sync com Portal AYA
-- [ ] Comandos remotos via portal
-
-### v3.0 — planejado
+### Pendente
+- [ ] Setup wizard (fluxo guiado visual de montagem — steps existem, UI wizard não)
 - [ ] DMX / ArtNet
-- [ ] Monitoramento de tipo de internet (4G, Starlink, venue)
-- [ ] Visão computacional (contagem de público, heatmap) via 4090
-- [ ] Relatórios de sessão
+- [ ] Monitoramento de tipo de internet (4G data usage, Starlink health)
+- [ ] Alertas Telegram direto do expo-tools (hoje só via Portal)
+- [ ] Power off de TVs Hisense via RemoteNow (bloqueado por mTLS fechado)
+- [ ] Multi-servidor health (SHOW + BKP)
 
 ---
 
-## Usuários
+## Docs
 
-| Pessoa | Papel | Uso principal |
-|--------|-------|---------------|
-| **Ihon Yadoya** | Produtor Técnico | Montagem, setup, operação remota |
-| **Minhoso** | Equipe técnica | Monitoramento durante temporada |
-| **Leonardo Curti** | Equipe | Operação e diagnóstico |
-| **Felipe** | Direção | Visão remota via portal, insights |
+| Arquivo | Conteúdo |
+|---------|----------|
+| `docs/STRATEGY.md` | Estratégia de implementação (4 ciclos) |
+| `docs/AUDIO-DRIVER-QUIRK.md` | Bug de volume em chips Creative — causa e fix |
+| `docs/CHANGELOG-2026-03-24.md` | Migração TVs Ethernet + fix de áudio |
 
 ---
 
 ## Requisitos
 
-- Node.js 18+
-- Windows 10/11 (media server AYA) ou Linux
+- Node.js 18+ (22 recomendado)
+- Windows 10/11 (media server AYA)
+- Python 3.11+ (para CV, com venv em `cv/venv/`)
+- GPU dedicada para CV (GTX 1080 Ti ou superior)
 - Rede local com acesso aos projetores/câmeras
 - Internet opcional (para sync com Portal AYA)
 
 ---
 
-*◇ AYA Studio · Art & Tech — sistema desenvolvido com Pi · Claude Code*
+*◇ AYA Studio · Art & Tech*
