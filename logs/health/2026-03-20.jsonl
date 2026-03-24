@@ -1,1 +1,2 @@
 {"t":"2026-03-20T12:08:18.320Z","gpus":[],"cpu":59,"ram":54,"ramMB":4348,"disk":34,"diskFreeGB":148,"storageMB":{"media":0,"timelapse":0,"logs":0},"resolume":0,"osUp":372307}
+{"t":"2026-03-20T19:27:03.657Z","gpus":[],"cpu":94,"ram":51,"ramMB":4138,"disk":34,"diskFreeGB":147,"storageMB":{"media":0,"timelapse":0,"logs":0},"resolume":0,"osUp":398632,"alerts":[{"type":"warning","cat":"cpu","val":94}]}
