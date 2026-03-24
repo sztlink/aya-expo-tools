@@ -39,6 +39,7 @@ aya-expo-tools (LOCAL — media server)
   │   ├── cv-logger.js     ← gravação de dados de ocupação
   │   ├── cv-report.js     ← relatórios diários/semanais/mensais
   │   ├── timelapse.js     ← captura periódica de câmeras
+  │   ├── tuya.js           ← smart plugs Tuya Cloud API (on/off/status)
   │   ├── portal-sync.js   ← WebSocket push → Portal AYA
   │   ├── commissioning.js ← verificação automatizada de subsistemas
   │   └── loop-generator.js← geração de loops de vídeo para TVs
@@ -65,13 +66,13 @@ Portal AYA (REMOTO — portal.aya.cx)
 | Câmeras Intelbras iMD 3C | 4 | RTSP |
 | TVs Hisense 55A51HUA | 2 | Google Cast (Ethernet) |
 | Soundbars JBL + Sub | 3 zonas | Analógico (volume via Core Audio) |
-| Smart Plugs NovaDigital | 6+ | Tuya |
+| Smart Plugs AVATTO 16A | 2 | Tuya Cloud API v3.4 |
 | Internet | 4G | 60GB/mês |
 | GPU CV | GTX 1080 Ti (GPU 1) | YOLO v8m |
 
 **Docs específicos:**
 - `docs/AUDIO-DRIVER-QUIRK.md` — driver Creative ignora API escalar de volume
-- `docs/CHANGELOG-2026-03-24.md` — migração TVs WiFi→Ethernet, fix de áudio
+- `docs/CHANGELOG-2026-03-24.md` — migração TVs WiFi→Ethernet, fix de áudio, smart plugs Tuya
 
 ---
 
@@ -115,15 +116,16 @@ Módulos são ativados por config:
 
 ### Abertura
 1. Verifica se Resolume está pronto (GPU > 20%)
-2. WOL nas TVs → espera boot (30s)
-3. Cast vídeos nas TVs
-4. Liga projetores (PJLink)
-5. Restaura volume ambiente (80%)
+2. 🔌 Liga smart plugs (TVs recebem energia) → espera 15s
+3. 📺 WOL nas TVs → espera boot (30s) → Cast vídeos
+4. 🎥 Liga projetores (PJLink)
+5. 🔊 Restaura volume ambiente (80%)
 
 ### Fechamento
-1. Desliga projetores (PJLink)
-2. Para cast nas TVs
-3. Zera volume ambiente
+1. 🎥 Desliga projetores (PJLink)
+2. 📺 Para cast nas TVs
+3. 🔌 Desliga smart plugs (TVs perdem energia)
+4. 🔇 Zera volume ambiente
 
 Suporta horários por dia da semana:
 ```json
@@ -190,6 +192,15 @@ Roda na GPU 1 (GTX 1080 Ti) com YOLO v8m.
 |--------|----------|------|
 | GET | `/api/audio/volume` | Volume atual |
 | POST | `/api/audio/volume` | Define volume (body: `{level: 0-100}`) |
+
+### Smart Plugs (Tuya Cloud)
+| Método | Endpoint | Ação |
+|--------|----------|------|
+| GET | `/api/plugs` | Status de todos os plugs (on/off) |
+| POST | `/api/plugs/all/on` | Liga todos |
+| POST | `/api/plugs/all/off` | Desliga todos |
+| POST | `/api/plugs/:id/on` | Liga um plug |
+| POST | `/api/plugs/:id/off` | Desliga um plug |
 
 ### Câmeras
 | Método | Endpoint | Ação |
@@ -279,8 +290,9 @@ Hisense 55A51HUA (VIDAA, Chromecast built-in) · qualquer Chromecast-compatible
 Saída analógica P2 · qualquer dispositivo de áudio do Windows
 ⚠️ Alguns chips (Creative VEN_1102) não suportam API escalar — ver `docs/AUDIO-DRIVER-QUIRK.md`
 
-**Smart Plugs** — Tuya protocol
-NovaDigital · qualquer plug Tuya-compatible
+**Smart Plugs** — Tuya Cloud API (v3.4)
+AVATTO WiFi Smart Socket Brazil 16A · qualquer plug Tuya-compatible
+Requer credenciais em `config/tuya-cloud.json` (Access ID + Secret do platform.tuya.com)
 
 ---
 
@@ -291,8 +303,9 @@ NovaDigital · qualquer plug Tuya-compatible
 - Camera manager (RTSP/HTTP, snapshot, stream, check)
 - TV manager (WOL, Cast, volume, loop monitor)
 - Audio volume (Core Audio API em dB, compatível com todos os drivers)
+- Smart plugs Tuya Cloud (on/off/status via API, integrado ao scheduler)
 - Network scanner + discovery
-- Scheduler com sequência completa (open/close por dia da semana)
+- Scheduler com sequência completa (open/close por dia da semana, plugs + TVs + projetores + áudio)
 - Server health (CPU, GPU, RAM, temp, disco, Resolume)
 - Visão computacional (YOLO v8m, multi-câmera, zonas, counter, heatmap)
 - Relatórios de público (diário, semanal, mensal)
@@ -307,7 +320,6 @@ NovaDigital · qualquer plug Tuya-compatible
 - [ ] DMX / ArtNet
 - [ ] Monitoramento de tipo de internet (4G data usage, Starlink health)
 - [ ] Alertas Telegram direto do expo-tools (hoje só via Portal)
-- [ ] Power off de TVs Hisense via RemoteNow (bloqueado por mTLS fechado)
 - [ ] Multi-servidor health (SHOW + BKP)
 
 ---
@@ -318,7 +330,7 @@ NovaDigital · qualquer plug Tuya-compatible
 |---------|----------|
 | `docs/STRATEGY.md` | Estratégia de implementação (4 ciclos) |
 | `docs/AUDIO-DRIVER-QUIRK.md` | Bug de volume em chips Creative — causa e fix |
-| `docs/CHANGELOG-2026-03-24.md` | Migração TVs Ethernet + fix de áudio |
+| `docs/CHANGELOG-2026-03-24.md` | Migração TVs Ethernet, fix de áudio, smart plugs Tuya |
 
 ---
 

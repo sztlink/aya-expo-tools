@@ -10,3 +10,4 @@ media/*.mp4
 media/*.mov
 media/*.avi
 media/*.mkv
+config/tuya-cloud.json
