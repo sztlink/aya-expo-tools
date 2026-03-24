@@ -20,6 +20,7 @@ const serverHealth = require('./server-health');
 const { TimelapseCapture } = require('./timelapse');
 const loopGen = require('./loop-generator');
 const audio = require('./audio');
+const tuya = require('./tuya');
 const cvLogger = require('./cv-logger');
 const cvReport = require('./cv-report');
 
@@ -571,6 +572,54 @@ app.post('/api/config/test/plug/:i', async (req, res) => {
     });
     res.json({ ok: pingOk, message: pingOk ? `${p.name} respondendo` : `${p.ip} não responde. Verifique o IP e a conexão.` });
   } catch(e) { res.json({ ok: false, message: e.message }); }
+});
+
+// ─── API: Smart Plugs (Tuya Cloud) ─────────────────────────
+app.get('/api/plugs', async (req, res) => {
+  const plugs = config.smartplugs || [];
+  if (!tuya.isConfigured() || plugs.length === 0) return res.json([]);
+  try {
+    const status = await tuya.allStatus(plugs);
+    res.json(status);
+  } catch (e) { res.json(plugs.map(p => ({ id: p.id, controls: p.controls, on: null, error: e.message }))); }
+});
+
+app.post('/api/plugs/all/on', async (req, res) => {
+  const plugs = config.smartplugs || [];
+  try {
+    const results = await tuya.allOn(plugs);
+    addLogEntry('🔌 Smart plugs ligados' + (isRemoteCommand(req) ? ' (remoto)' : ''));
+    res.json({ ok: true, results });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/plugs/all/off', async (req, res) => {
+  const plugs = config.smartplugs || [];
+  try {
+    const results = await tuya.allOff(plugs);
+    addLogEntry('🔌 Smart plugs desligados' + (isRemoteCommand(req) ? ' (remoto)' : ''));
+    res.json({ ok: true, results });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/plugs/:id/on', async (req, res) => {
+  const plug = (config.smartplugs || []).find(p => p.id === req.params.id);
+  if (!plug) return res.status(404).json({ ok: false, error: 'Plug not found' });
+  try {
+    await tuya.turnOn(plug.deviceId);
+    addLogEntry('🔌 ' + plug.name + ' ligado' + (isRemoteCommand(req) ? ' (remoto)' : ''));
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/plugs/:id/off', async (req, res) => {
+  const plug = (config.smartplugs || []).find(p => p.id === req.params.id);
+  if (!plug) return res.status(404).json({ ok: false, error: 'Plug not found' });
+  try {
+    await tuya.turnOff(plug.deviceId);
+    addLogEntry('🔌 ' + plug.name + ' desligado' + (isRemoteCommand(req) ? ' (remoto)' : ''));
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
 // ─── API: Log ──────────────────────────────────────────────
