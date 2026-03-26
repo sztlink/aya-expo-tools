@@ -49,6 +49,21 @@ Arquivo alterado:
 
 ---
 
+## fix(tv): 4K compatível apenas em H.264 nas TVs Hisense
+
+Teste de campo em 25/03/2026:
+- `Samuel_4K_entrevista.mp4.mp4` estava em **HEVC / H.265** → TV-1 ficou em loading infinito no Vudei/Cast receiver
+- `Samuel_4K_estudio.mp4.mp4` estava em **H.264 / AVC** → playback ok
+- Solução: transcode da entrevista para **H.264 4K** (`Samuel_4K_entrevista_h264.mp4`), regeneração do loop e power cycle da TV via smart plug
+
+### Regra operacional
+
+Para estas TVs **Hisense 55A51HUA** em `aya-expo-tools`:
+- **4K pode**, desde que o codec seja **H.264 / AVC**
+- **HEVC / H.265 não é confiável** no Cast receiver embutido
+- Se travar em loading, fazer **power cycle no smart plug** antes de novo cast
+- Evitar arquivos com nome duplicado como `.mp4.mp4`
+
 ## Notas operacionais
 
 - **Não usar `taskkill /f` no Arena.exe** enquanto ele estiver com sessão WASAPI ativa.

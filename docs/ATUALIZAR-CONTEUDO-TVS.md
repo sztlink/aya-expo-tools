@@ -19,6 +19,10 @@ Use nomes descritivos, sem espaço e sem acento. Exemplo:
 - `Samuel_4K_entrevista.mp4`
 - `Samuel_4K_estudio.mp4`
 
+⚠️ **Regra importante:** o Cast das TVs Hisense aceita bem **4K em H.264 (AVC)**. Arquivos **H.265/HEVC** podem ficar em loading infinito.
+
+⚠️ **Outra regra:** evitar nomes com extensão duplicada, tipo `.mp4.mp4`.
+
 ### 2. Parar os vídeos atuais
 
 Abra o navegador no media server e acesse:
@@ -72,6 +76,7 @@ Confirme que os vídeos estão rodando nas duas TVs sem travamento.
 ## Se algo der errado
 
 - **TV não aparece:** verificar se a TV está ligada (smart plug) e na rede (cabo Ethernet)
-- **Vídeo trava:** o arquivo pode ser muito pesado pro Cast. Reduzir resolução ou bitrate
+- **Vídeo trava:** primeiro verificar se o codec é **H.264**. Se estiver em **H.265/HEVC**, transcodar para H.264 mantendo 4K, se necessário.
+- **Loading infinito em uma TV:** fazer power cycle no smart plug da TV e recastar o vídeo.
 - **Erro no assign:** verificar se o nome do arquivo está exatamente igual ao que está na pasta `media`
 - **Precisa de ajuda:** mandar mensagem no grupo que o Pi resolve remotamente
