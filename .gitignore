@@ -10,6 +10,7 @@ media/*.mp4
 media/*.mov
 media/*.avi
 media/*.mkv
-config/*.json  
-config/tuya-cloud.json  
-.env  
+config/*.json
+config/*.bak*
+config/tv-certs/
+config/tuya-cloud.json
