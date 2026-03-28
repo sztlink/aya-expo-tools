@@ -1,0 +1,38 @@
+=== Timelapse Stories v3 + Heatmap YOLO ===
+  cam-2: 136 frames  [144510 -> 165956]
+  cam-1: 136 frames  [144510 -> 165956]
+  cam-3: 136 frames  [144510 -> 165956]
+Total: 136 frames  |  13.6s  @  10fps
+
+Logo AYA: (124, 70)
+Logo SZT: (92, 52)
+
+FASE 1 - YOLO inference nos 136 frames de cam-2...
+  Modelo: yolov8s  |  Device: cuda:0
+    1/136  144510  ETA 5s  frames-com-calor: 0
+   21/136  150518  ETA 3s  frames-com-calor: 19
+   41/136  152518  ETA 2s  frames-com-calor: 39
+   61/136  154458  ETA 2s  frames-com-calor: 59
+   81/136  160458  ETA 1s  frames-com-calor: 79
+  101/136  162458  ETA 1s  frames-com-calor: 99
+  121/136  164456  ETA 0s  frames-com-calor: 119
+  136/136  165956  ETA 0s  frames-com-calor: 134
+FASE 1 concluida em 3.3s
+
+FASE 2 - Renderizando frames compostos...
+  Frame 1/136  14h45
+  Frame 31/136  15h15
+  Frame 61/136  15h44
+  Frame 91/136  16h14
+  Frame 121/136  16h44
+  Frame 136/136  16h59
+FASE 2 concluida
+
+FASE 3 - Codificando...
+  Trilha: OK
+
+VIDEO OK -> C:\aya-expo-tools\tmp\timelapse-stories-v3.mp4
+19.7 MB  |  13.6s  |  audio=sim
+
+Concluido.
+done 

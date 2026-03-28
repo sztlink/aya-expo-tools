@@ -1,0 +1,6 @@
+192.168.0.202 /setup/eureka_info 200 {"bssid":"","build_version":"446070","cast_build_revision":"3.72.446070","connected":true,"ethernet_connected":true,"has_update":false,"hotspot_bssid":"FA:8F:9D:8C:ED:ED","ip_address":"192.168.0.202",
+192.168.0.202 /setup/reboot 405 
+192.168.0.202 /setup/configured_networks 404 
+192.168.0.201 /setup/eureka_info 200 {"bssid":"","build_version":"446070","cast_build_revision":"3.72.446070","connected":true,"ethernet_connected":true,"has_update":false,"hotspot_bssid":"FA:8F:6A:9D:3E:7B","ip_address":"192.168.0.201",
+192.168.0.201 /setup/reboot 405 
+192.168.0.201 /setup/configured_networks 404 

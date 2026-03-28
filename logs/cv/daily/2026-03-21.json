@@ -1,0 +1,176 @@
+{
+  "date": "2026-03-21",
+  "samples": 608,
+  "firstSample": "2026-03-21T13:47:51.901Z",
+  "lastSample": "2026-03-21T23:59:24.451Z",
+  "counter": {
+    "entries": 42,
+    "exits": 38,
+    "occupancy": 4
+  },
+  "counterHourly": {
+    "10": {
+      "entries": 12,
+      "exits": 10
+    },
+    "11": {
+      "entries": 15,
+      "exits": 14
+    },
+    "12": {
+      "entries": 10,
+      "exits": 11
+    },
+    "09": {
+      "entries": 5,
+      "exits": 3
+    }
+  },
+  "peak": {
+    "count": 1,
+    "time": "2026-03-21T13:53:01.237Z"
+  },
+  "zones": {
+    "sala-imersiva": {
+      "max": 0,
+      "avg": 0,
+      "minutesOccupied": 0,
+      "minutesTotal": 608,
+      "occupancyRate": 0
+    },
+    "galeria": {
+      "max": 1,
+      "avg": 0,
+      "minutesOccupied": 1,
+      "minutesTotal": 608,
+      "occupancyRate": 0.2
+    },
+    "corredor": {
+      "max": 0,
+      "avg": 0,
+      "minutesOccupied": 0,
+      "minutesTotal": 608,
+      "occupancyRate": 0
+    },
+    "entrada": {
+      "max": 0,
+      "avg": 0,
+      "minutesOccupied": 0,
+      "minutesTotal": 608,
+      "occupancyRate": 0
+    }
+  },
+  "dwell": {},
+  "hourly": {
+    "13": {
+      "samples": 10,
+      "zones": {
+        "sala-imersiva": 0,
+        "galeria": 0.1,
+        "corredor": 0,
+        "entrada": 0
+      },
+      "avgTotal": 0.1
+    },
+    "14": {
+      "samples": 58,
+      "zones": {
+        "sala-imersiva": 0,
+        "galeria": 0,
+        "corredor": 0,
+        "entrada": 0
+      },
+      "avgTotal": 0
+    },
+    "15": {
+      "samples": 60,
+      "zones": {
+        "sala-imersiva": 0,
+        "galeria": 0,
+        "corredor": 0,
+        "entrada": 0
+      },
+      "avgTotal": 0
+    },
+    "16": {
+      "samples": 60,
+      "zones": {
+        "sala-imersiva": 0,
+        "galeria": 0,
+        "corredor": 0,
+        "entrada": 0
+      },
+      "avgTotal": 0
+    },
+    "17": {
+      "samples": 60,
+      "zones": {
+        "sala-imersiva": 0,
+        "galeria": 0,
+        "corredor": 0,
+        "entrada": 0
+      },
+      "avgTotal": 0
+    },
+    "18": {
+      "samples": 60,
+      "zones": {
+        "sala-imersiva": 0,
+        "galeria": 0,
+        "corredor": 0,
+        "entrada": 0
+      },
+      "avgTotal": 0
+    },
+    "19": {
+      "samples": 60,
+      "zones": {
+        "sala-imersiva": 0,
+        "galeria": 0,
+        "corredor": 0,
+        "entrada": 0
+      },
+      "avgTotal": 0
+    },
+    "20": {
+      "samples": 60,
+      "zones": {
+        "sala-imersiva": 0,
+        "galeria": 0,
+        "corredor": 0,
+        "entrada": 0
+      },
+      "avgTotal": 0
+    },
+    "21": {
+      "samples": 60,
+      "zones": {
+        "sala-imersiva": 0,
+        "galeria": 0,
+        "corredor": 0,
+        "entrada": 0
+      },
+      "avgTotal": 0
+    },
+    "22": {
+      "samples": 60,
+      "zones": {
+        "sala-imersiva": 0,
+        "galeria": 0,
+        "corredor": 0,
+        "entrada": 0
+      },
+      "avgTotal": 0
+    },
+    "23": {
+      "samples": 60,
+      "zones": {
+        "sala-imersiva": 0,
+        "galeria": 0,
+        "corredor": 0,
+        "entrada": 0
+      },
+      "avgTotal": 0
+    }
+  }
+}

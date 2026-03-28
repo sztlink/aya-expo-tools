@@ -1,0 +1,535 @@
+﻿** The server may need to be upgraded. See https://openssh.com/pq.html
+{
+  "exhibition": {
+    "name": "Beleza Astral",
+    "venue": "Farol Santander",
+    "openingDate": "2026-03-26",
+    "city": "Sï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½?Tï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½o Paulo",
+    "type": "sala-imersiva",
+    "slug": "beleza-astral",
+    "projetoId": "cml9t9rrc0003peao6wux69rl",
+    "network": {
+      "subnet": "192.168.0.0/24",
+      "gateway": "192.168.0.1",
+      "mediaServer": "192.168.0.10",
+      "router": {
+        "model": "",
+        "mac": "3C:6A:D2:5E:0D:50",
+        "adminUrl": "http://192.168.0.1",
+        "user": "admin",
+        "password": ""
+      }
+    }
+  },
+  "modules": {
+    "projectors": true,
+    "cameras": true,
+    "audio": true,
+    "smartplugs": true,
+    "tvs": true,
+    "dmx": false,
+    "resolume": true,
+    "remoteAccess": true
+  },
+  "projectors": [
+    {
+      "id": "proj-1",
+      "name": "Projetor 1",
+      "ip": "192.168.0.101",
+      "mac": "14:50:51:AD:B4:16",
+      "model": "NEC PE456USL",
+      "input": "HDMI1"
+    },
+    {
+      "id": "proj-2",
+      "name": "Projetor 2",
+      "ip": "192.168.0.102",
+      "mac": "14:50:51:AD:8F:2E",
+      "model": "NEC PE456USL",
+      "input": "HDMI1"
+    },
+    {
+      "id": "proj-3",
+      "name": "Projetor 3",
+      "ip": "192.168.0.103",
+      "mac": "14:50:51:AD:6A:58",
+      "model": "NEC PE456USL",
+      "input": "HDMI1"
+    },
+    {
+      "id": "proj-4",
+      "name": "Projetor 4",
+      "ip": "192.168.0.104",
+      "mac": "14:50:51:AD:6A:55",
+      "model": "NEC PE456USL",
+      "input": "HDMI1"
+    },
+    {
+      "id": "proj-5",
+      "name": "Projetor 5",
+      "ip": "192.168.0.105",
+      "mac": "14:50:51:AD:7C:24",
+      "model": "NEC PE456USL",
+      "input": "HDMI1"
+    },
+    {
+      "id": "proj-6",
+      "name": "Projetor 6",
+      "ip": "192.168.0.106",
+      "mac": "8C:52:19:44:9F:B3",
+      "model": "NEC PE456USL",
+      "input": "HDMI1"
+    }
+  ],
+  "cameras": [
+    {
+      "id": "cam-1",
+      "name": "Cï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½?Tï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½mera 1",
+      "ip": "192.168.0.107",
+      "mac": "80:85:44:6C:68:C6",
+      "model": "Intelbras iMD 3C Black",
+      "user": "admin",
+      "password": "ac00ac00ac00ac",
+      "serial": "FJ1M24007238M"
+    },
+    {
+      "id": "cam-2",
+      "name": "Cï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½?Tï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½mera 2",
+      "ip": "192.168.0.108",
+      "mac": "98:2A:0A:82:0A:C5",
+      "model": "Intelbras iMD 3C Black",
+      "user": "admin",
+      "password": "ac00ac00ac00ac"
+    },
+    {
+      "id": "cam-3",
+      "name": "Cï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½?Tï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½mera 3",
+      "ip": "192.168.0.181",
+      "mac": "98:2A:0A:82:0A:8B",
+      "model": "Intelbras iMD 3C Black",
+      "user": "admin",
+      "password": "ac00ac00ac00ac"
+    },
+    {
+      "id": "cam-4",
+      "name": "Cï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½?Tï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½mera 4",
+      "ip": "192.168.0.200",
+      "mac": "98:2A:0A:82:0A:9E",
+      "model": "Intelbras iMD 3C Black",
+      "user": "admin",
+      "password": "Abcd1234#!",
+      "notes": "Instalada por Ihon em 20/03/2026"
+    }
+  ],
+  "audio": {
+    "type": "analog",
+    "interface": "",
+    "notes": "3x JBL soundbar + subwoofer ï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Yï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Yï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½? saï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½?Tï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½da analï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½?Tï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½gica direto do servidor",
+    "zones": [
+      {
+        "id": "audio-1",
+        "name": "Zona A",
+        "equipment": "JBL Bar + Sub"
+      },
+      {
+        "id": "audio-2",
+        "name": "Zona B",
+        "equipment": "JBL Bar + Sub"
+      },
+      {
+        "id": "audio-3",
+        "name": "Zona C",
+        "equipment": "JBL Bar + Sub"
+      }
+    ]
+  },
+  "smartplugs": [
+    {
+      "id": "plug-tv1",
+      "name": "Smart Plug TV-1",
+      "ip": "192.168.0.184",
+      "model": "AVATTO WiFi Smart Socket Brazil 16A",
+      "controls": "TV-1",
+      "deviceId": "eb7a4ea2c370d73f91ymo5",
+      "productKey": "keyjup78v54myhan",
+      "protocol": "tuya",
+      "version": "3.4"
+    },
+    {
+      "id": "plug-tv2",
+      "name": "Smart Plug TV-2",
+      "ip": "192.168.0.126",
+      "model": "AVATTO WiFi Smart Socket Brazil 16A",
+      "controls": "TV-2",
+      "deviceId": "eb9a38f4fa639284bcemvo",
+      "productKey": "keyjup78v54myhan",
+      "protocol": "tuya",
+      "version": "3.4"
+    }
+  ],
+  "tvs": [
+    {
+      "id": "tv-1",
+      "name": "TV 1",
+      "ip": "192.168.0.202",
+      "mac": "C4:08:26:9A:E7:EB",
+      "model": "Hisense 55A51HUA",
+      "zone": "",
+      "broadcastAddr": "192.168.0.255",
+      "protocol": "cast",
+      "videoUrl": "/loops/Samuel_4K_entrevista_h264-loop.mp4",
+      "videoUrlOriginal": "/media/Samuel_4K_entrevista_h264.mp4",
+      "videoTitle": "Beleza Astral TV1"
+    },
+    {
+      "id": "tv-2",
+      "name": "TV 2",
+      "ip": "192.168.0.201",
+      "mac": "C4:08:26:9A:E8:88",
+      "model": "Hisense 55A51HUA",
+      "zone": "",
+      "broadcastAddr": "192.168.0.255",
+      "protocol": "cast",
+      "videoUrl": "/loops/Samuel_4K_estudio.mp4-loop.mp4",
+      "videoUrlOriginal": "/media/Samuel_4K_estudio.mp4.mp4",
+      "videoTitle": "Beleza Astral TV2"
+    }
+  ],
+  "space": {
+    "planta": "/files/planta-samuel-de-saboia-dark.png",
+    "plantaPdf": "/files/planta-expografia-R02.pdf",
+    "plantaVersao": "R02 ï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Yï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Yï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½? Janeiro 2026 (Brï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½?Tï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½gida Garrido)",
+    "notas": "Exposiï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½?Tï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½?Tï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½o Samuel de Saboia ï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Yï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Yï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½? Introduï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½?Tï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½?Tï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½o ao Infinito. 22ï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ andar do Farol Santander SP.\nZonas: Entrada ï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Obras ï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Sala Imersiva ï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Sala Tï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½?Tï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½cnica ï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Vï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½?Tï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½deo 1 ï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Vï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½?Tï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½deo 2.\nR02 aprovada para orï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½?Tï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½amento de cenografia (13/01/2026).",
+    "andares": "22ï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ andar"
+  },
+  "resolume": {
+    "process": "Arena.exe",
+    "pixelmap": "",
+    "contentStatus": "pixelmap",
+    "notes": "Mapeado com pixelmap JPG/PNG ï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Yï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Yï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½? Samuel de Saboia"
+  },
+  "remoteAccess": {
+    "rustdesk": {
+      "enabled": true,
+      "id": ""
+    },
+    "tailscale": {
+      "enabled": false,
+      "ip": ""
+    }
+  },
+  "pjlink": {
+    "port": 4352,
+    "password": "",
+    "pollInterval": 30000
+  },
+  "schedule": {
+    "enabled": true,
+    "timezone": "America/Sao_Paulo",
+    "powerOn": "09:00",
+    "powerOff": "20:00",
+    "days": {
+      "mon": null,
+      "tue": {
+        "open": "09:00",
+        "close": "20:00"
+      },
+      "wed": {
+        "open": "09:00",
+        "close": "20:00"
+      },
+      "thu": {
+        "open": "09:00",
+        "close": "20:00"
+      },
+      "fri": {
+        "open": "09:00",
+        "close": "20:00"
+      },
+      "sat": {
+        "open": "09:00",
+        "close": "20:00"
+      },
+      "sun": {
+        "open": "09:00",
+        "close": "20:00"
+      }
+    },
+    "audioVolume": 80
+  },
+  "cv": {
+    "enabled": true,
+    "cameras": [
+      "cam-1",
+      "cam-2",
+      "cam-3",
+      "cam-4"
+    ],
+    "gpu": 1,
+    "model": "yolov8m",
+    "interval": 1,
+    "confidence": 0.3,
+    "heatmapDecay": 0.999,
+    "imgsz": 960,
+    "countStrategy": "max",
+    "_comment_zones": "cameras ï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½?Tï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ um dict: {cam_id: 'full' | [[x,y],...]}. strategy: 'max' para cï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½?Tï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½meras no mesmo espaï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½?Tï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½o fï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½?Tï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½sico (evita dupla contagem), 'sum' para espaï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½?Tï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½os distintos sem sobreposiï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½?Tï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Yï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½?Tï¿½Yï¿½ï¿½ï¿½?sï¿½ï¿½ï¿½'ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½o.",
+    "zones": [
+      {
+        "id": "sala-imersiva",
+        "name": "Sala Imersiva",
+        "strategy": "max",
+        "cameras": {
+          "cam-1": [
+            [
+              464,
+              158
+            ],
+            [
+              517,
+              510
+            ],
+            [
+              856,
+              380
+            ],
+            [
+              848,
+              110
+            ],
+            [
+              1131,
+              37
+            ],
+            [
+              1895,
+              198
+            ],
+            [
+              1733,
+              1063
+            ],
+            [
+              96,
+              1067
+            ],
+            [
+              8,
+              740
+            ],
+            [
+              20,
+              271
+            ]
+          ],
+          "cam-3": [
+            [
+              460,
+              166
+            ],
+            [
+              521,
+              546
+            ],
+            [
+              937,
+              401
+            ],
+            [
+              921,
+              150
+            ],
+            [
+              1257,
+              8
+            ],
+            [
+              1899,
+              73
+            ],
+            [
+              1843,
+              849
+            ],
+            [
+              1770,
+              1055
+            ],
+            [
+              12,
+              1055
+            ],
+            [
+              12,
+              498
+            ],
+            [
+              161,
+              231
+            ]
+          ]
+        },
+        "alert": {
+          "emptyAfter": 300
+        }
+      },
+      {
+        "id": "galeria",
+        "name": "Galeria",
+        "strategy": "single",
+        "cameras": {
+          "cam-4": [
+            [
+              3,
+              413
+            ],
+            [
+              193,
+              279
+            ],
+            [
+              319,
+              736
+            ],
+            [
+              468,
+              538
+            ],
+            [
+              416,
+              219
+            ],
+            [
+              594,
+              61
+            ],
+            [
+              1277,
+              45
+            ],
+            [
+              1899,
+              150
+            ],
+            [
+              1907,
+              1055
+            ],
+            [
+              20,
+              1067
+            ]
+          ]
+        },
+        "alert": {}
+      },
+      {
+        "id": "corredor",
+        "name": "Corredor",
+        "strategy": "single",
+        "cameras": {
+          "cam-2": [
+            [
+              953,
+              550
+            ],
+            [
+              493,
+              506
+            ],
+            [
+              529,
+              13
+            ],
+            [
+              1034,
+              45
+            ]
+          ]
+        },
+        "alert": {}
+      },
+      {
+        "id": "entrada",
+        "name": "Entrada",
+        "strategy": "single",
+        "cameras": {
+          "cam-2": [
+            [
+              12,
+              202
+            ],
+            [
+              24,
+              243
+            ],
+            [
+              12,
+              1055
+            ],
+            [
+              1883,
+              1072
+            ],
+            [
+              1907,
+              384
+            ],
+            [
+              1701,
+              271
+            ],
+            [
+              1624,
+              384
+            ],
+            [
+              1531,
+              247
+            ],
+            [
+              1026,
+              118
+            ],
+            [
+              949,
+              542
+            ],
+            [
+              484,
+              522
+            ],
+            [
+              476,
+              97
+            ]
+          ]
+        },
+        "alert": {}
+      }
+    ],
+    "counter": {
+      "enabled": true,
+      "camera": "cam-2",
+      "line": "638,392,1022,376",
+      "confidence": 0.3,
+      "interval": 0.25
+    }
+  },
+  "server": {
+    "port": 3000,
+    "host": "0.0.0.0"
+  },
+  "portalSync": {
+    "enabled": true,
+    "url": "http://192.168.15.169:3000",
+    "apiKey": "",
+    "interval": 30000
+  },
+  "notify": {
+    "telegram": {
+      "token": "8650257978:AAGRs0EksM7yHEuH5iG13XTcH4p44iC3vdQ",
+      "chatId": "1762676629"
+    }
+  }
+}
+

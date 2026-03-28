@@ -27,6 +27,8 @@
 const cron = require('node-cron');
 let _audio = null;
 try { _audio = require('./audio'); } catch { /* audio opcional */ }
+let _tuya = null;
+try { _tuya = require('./tuya'); } catch { /* tuya opcional */ }
 
 const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const DAY_LABELS = {
@@ -43,6 +45,7 @@ class Scheduler {
     this.fullConfig = config;
     this.config = config.schedule || {};
     this.tvConfig = config.tvs || [];
+    this.plugConfig = config.smartplugs || [];
     this.serverConfig = config.server || {};
     this.jobs = [];
     this.enabled = false;
@@ -154,6 +157,21 @@ class Scheduler {
     // Proxy: GPU 0 com utilização > 20% indica que o Resolume está renderizando.
     await this._waitForResolume();
 
+    // Step 0.5: Turn on smart plugs (TVs need power before WOL)
+    if (_tuya && _tuya.isConfigured() && this.plugConfig.length > 0) {
+      try {
+        this.addLog('plugs-on', 'started');
+        const results = await _tuya.allOn(this.plugConfig);
+        const ok = results.filter(r => r.ok).length;
+        this.addLog('plugs-on', 'completed', `${ok}/${results.length} plugs ligados`);
+        console.log(`[Scheduler] 🔌 Smart plugs ligados: ${ok}/${results.length}`);
+        // Wait for TVs to boot from power restore
+        if (ok > 0) await this._sleep(15000);
+      } catch (err) {
+        this.addLog('plugs-on', 'error', err.message);
+      }
+    }
+
     // Step 1: Wake TVs via WOL
     if (this.tvModule && this.tvConfig.length > 0) {
       try {
@@ -235,7 +253,20 @@ class Scheduler {
       }
     }
 
-    // Step 3: Fade audio to 0
+    // Step 3: Turn off smart plugs (cuts power to TVs)
+    if (_tuya && _tuya.isConfigured() && this.plugConfig.length > 0) {
+      try {
+        this.addLog('plugs-off', 'started');
+        const results = await _tuya.allOff(this.plugConfig);
+        const ok = results.filter(r => r.ok).length;
+        this.addLog('plugs-off', 'completed', `${ok}/${results.length} plugs desligados`);
+        console.log(`[Scheduler] 🔌 Smart plugs desligados: ${ok}/${results.length}`);
+      } catch (err) {
+        this.addLog('plugs-off', 'error', err.message);
+      }
+    }
+
+    // Step 4: Fade audio to 0
     if (_audio) {
       try {
         _audio.setVolume(0);

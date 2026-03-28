@@ -1,5 +1,5 @@
-/**
- * AYA Expo Tools — Server
+﻿/**
+ * AYA Expo Tools <ï¿½ï¿½?" Server
  * Express + WebSocket for real-time updates
  */
 
@@ -20,10 +20,14 @@ const serverHealth = require('./server-health');
 const { TimelapseCapture } = require('./timelapse');
 const loopGen = require('./loop-generator');
 const audio = require('./audio');
+const tuya = require('./tuya');
 const cvLogger = require('./cv-logger');
 const cvReport = require('./cv-report');
+const cvNotify = require('./cv-notify');
 
-// ─── Load Config ───────────────────────────────────────────
+const cvReportHtml = require('./cv-report-html');
+
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? Load Config <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 const configArg = process.argv.find(a => a.startsWith('--config='));
 const configName = configArg ? configArg.split('=')[1] : 'beleza-astral';
 const configPath = path.join(__dirname, '..', 'config', `${configName}.json`);
@@ -37,12 +41,12 @@ if (!fs.existsSync(configPath)) {
   process.exit(1);
 }
 
-const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-console.log(`\n  ◇ AYA EXPO TOOLS`);
-console.log(`  ${config.exhibition.name} — ${config.exhibition.venue}`);
-console.log(`  ${config.projectors.length} projetores · ${config.cameras.length} câmeras\n`);
+const config = JSON.parse((() => { let _r = fs.readFileSync(configPath, 'utf8'); return _r.charCodeAt(0) === 0xFEFF ? _r.slice(1) : _r; })());
+console.log(`\n  <ï¿½ï¿½-<ï¿½ï¿½ AYA EXPO TOOLS`);
+console.log(`  ${config.exhibition.name} <ï¿½ï¿½?" ${config.exhibition.venue}`);
+console.log(`  ${config.projectors.length} projetores <ï¿½ï¿½<ï¿½ï¿½ ${config.cameras.length} c<ï¿½ï¿½<ï¿½ï¿½meras\n`);
 
-// ─── Log (definido cedo — usado por PortalSync e pelas rotas) ──
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? Log (definido cedo <ï¿½ï¿½?" usado por PortalSync e pelas rotas) <ï¿½ï¿½"?<ï¿½ï¿½"?
 const LOG_PATH = path.join(__dirname, '..', 'config', 'log.json');
 
 function readLog() {
@@ -61,42 +65,42 @@ function addLogEntry(message, type = 'system') {
   writeLog(entries);
 }
 
-// ─── Session Manager (Ciclo 3 — R4: proteção contra comandos destrutivos remotos) ─
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? Session Manager (Ciclo 3 <ï¿½ï¿½?" R4: prote<ï¿½ï¿½<ï¿½ï¿½oo contra comandos destrutivos remotos) <ï¿½ï¿½"?
 const session = {
   active: false,
   startedAt: null,
   startedBy: null,
 };
 
-// ─── Initialize Managers ───────────────────────────────────
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? Initialize Managers <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 const projectors = new ProjectorManager(config);
 const cameras = new CameraManager(config);
 const scheduler = new Scheduler(projectors, config, tv, serverHealth);
 const cvManager = new CVManager(config);
-const timelapse = new TimelapseCapture(cameras, { interval: 60_000 });
+const timelapse     = new TimelapseCapture(cameras, { schedule: config.schedule });
 const portalSync = new PortalSync(config, projectors, cameras, scheduler, readLog, session, cvManager, serverHealth);
 
 function isRemoteCommand(req) {
-  // Comandos do portal vêm com header X-Remote-Command
+  // Comandos do portal v<ï¿½ï¿½<ï¿½ï¿½m com header X-Remote-Command
   return req.headers['x-remote-command'] === 'true';
 }
 
-// Rotas que são bloqueadas quando sessão está ativa e comando é remoto
+// Rotas que s<ï¿½ï¿½oo bloqueadas quando sess<ï¿½ï¿½oo est<ï¿½ï¿½<ï¿½ï¿½ ativa e comando <ï¿½ï¿½<ï¿½ï¿½ remoto
 const DESTRUCTIVE_PATHS = [
   '/api/projectors/all/off',
   '/api/projectors/all/on',
 ];
-// Padrão regex para rotas individuais de projetores
+// Padr<ï¿½ï¿½oo regex para rotas individuais de projetores
 const PROJECTOR_CMD_RE = /^\/api\/projectors\/[^/]+\/(on|off)$/;
 
-// ─── Express App ───────────────────────────────────────────
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? Express App <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 const app = express();
 const server = http.createServer(app);
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, '..', 'ui')));
 
-// Middleware: bloqueia comandos remotos destrutivos durante sessão ativa
+// Middleware: bloqueia comandos remotos destrutivos durante sess<ï¿½ï¿½oo ativa
 app.use((req, res, next) => {
   if (!session.active || !isRemoteCommand(req)) return next();
   if (req.method !== 'POST') return next();
@@ -104,21 +108,21 @@ app.use((req, res, next) => {
   const isDestructive = DESTRUCTIVE_PATHS.includes(req.path) || PROJECTOR_CMD_RE.test(req.path);
   if (isDestructive) {
     return res.status(423).json({
-      error: 'Sessão ativa — comandos remotos bloqueados',
+      error: 'Sess<ï¿½ï¿½oo ativa <ï¿½ï¿½?" comandos remotos bloqueados',
       session: { active: true, startedAt: session.startedAt, startedBy: session.startedBy },
     });
   }
   next();
 });
 
-// ─── API: Session (Ciclo 3 — R4) ───────────────────────────
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? API: Session (Ciclo 3 <ï¿½ï¿½?" R4) <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 app.get('/api/session', (req, res) => {
   res.json(session);
 });
 
 app.post('/api/session/start', (req, res) => {
   if (session.active) {
-    return res.json({ ok: true, message: 'Sessão já ativa', session });
+    return res.json({ ok: true, message: 'Sess<ï¿½ï¿½oo j<ï¿½ï¿½<ï¿½ï¿½ ativa', session });
   }
   session.active = true;
   session.startedAt = new Date().toISOString();
@@ -127,17 +131,17 @@ app.post('/api/session/start', (req, res) => {
 
   // Log
   const entries = readLog();
-  entries.unshift({ message: `🟢 Sessão iniciada por ${session.startedBy}`, type: 'session', timestamp: session.startedAt });
+  entries.unshift({ message: `<ï¿½ï¿½YY<ï¿½ï¿½ Sess<ï¿½ï¿½oo iniciada por ${session.startedBy}`, type: 'session', timestamp: session.startedAt });
   if (entries.length > 200) entries.splice(200);
   writeLog(entries);
 
-  console.log(`  🟢 Sessão ativa — comandos remotos destrutivos bloqueados`);
+  console.log(`  <ï¿½ï¿½YY<ï¿½ï¿½ Sess<ï¿½ï¿½oo ativa <ï¿½ï¿½?" comandos remotos destrutivos bloqueados`);
   res.json({ ok: true, session });
 });
 
 app.post('/api/session/end', (req, res) => {
   if (!session.active) {
-    return res.json({ ok: true, message: 'Sessão já inativa', session });
+    return res.json({ ok: true, message: 'Sess<ï¿½ï¿½oo j<ï¿½ï¿½<ï¿½ï¿½ inativa', session });
   }
   session.active = false;
   const endedAt = new Date().toISOString();
@@ -145,17 +149,17 @@ app.post('/api/session/end', (req, res) => {
 
   // Log
   const entries = readLog();
-  entries.unshift({ message: `🔴 Sessão encerrada`, type: 'session', timestamp: endedAt });
+  entries.unshift({ message: `<ï¿½ï¿½Y"<ï¿½ï¿½ Sess<ï¿½ï¿½oo encerrada`, type: 'session', timestamp: endedAt });
   if (entries.length > 200) entries.splice(200);
   writeLog(entries);
 
   session.startedAt = null;
   session.startedBy = null;
-  console.log(`  🔴 Sessão encerrada — comandos remotos liberados`);
+  console.log(`  <ï¿½ï¿½Y"<ï¿½ï¿½ Sess<ï¿½ï¿½oo encerrada <ï¿½ï¿½?" comandos remotos liberados`);
   res.json({ ok: true, session });
 });
 
-// ─── API: Exhibition Info ──────────────────────────────────
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? API: Exhibition Info <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 app.get('/api/info', (req, res) => {
   res.json({
     exhibition: config.exhibition,
@@ -167,7 +171,7 @@ app.get('/api/info', (req, res) => {
   });
 });
 
-// ─── API: Projectors ───────────────────────────────────────
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? API: Projectors <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 app.get('/api/projectors', (req, res) => {
   res.json(projectors.getAllStatus());
 });
@@ -239,7 +243,7 @@ app.post('/api/projectors/:id/input', async (req, res) => {
   }
 });
 
-// ─── API: Cameras ──────────────────────────────────────────
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? API: Cameras <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 app.get('/api/cameras', (req, res) => {
   res.json(cameras.getAllStatus());
 });
@@ -265,7 +269,7 @@ app.get('/api/cameras/:id/snapshot', async (req, res) => {
   }
 });
 
-// ─── MJPEG stream proxy ─────────────────────────────────────
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? MJPEG stream proxy <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 app.get('/api/cameras/:id/stream', async (req, res) => {
   const cam = cameras.get(req.params.id);
   if (!cam) return res.status(404).json({ error: 'Camera not found' });
@@ -288,14 +292,14 @@ app.get('/api/cameras/:id/stream', async (req, res) => {
       res.write(`--${boundary}\r\nContent-Type: image/jpeg\r\nContent-Length: ${buffer.length}\r\n\r\n`);
       res.write(buffer);
       res.write('\r\n');
-    } catch (_) { /* câmera inacessível, tenta de novo */ }
+    } catch (_) { /* c<ï¿½ï¿½<ï¿½ï¿½mera inacess<ï¿½ï¿½<ï¿½ï¿½vel, tenta de novo */ }
     if (active) setTimeout(sendFrame, 200); // ~5 fps
   };
 
   sendFrame();
 });
 
-// ─── API: Network ──────────────────────────────────────────
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? API: Network <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 app.post('/api/network/scan', async (req, res) => {
   const subnet = config.exhibition.network?.subnet?.split('.').slice(0, 3).join('.') || '10.0.1';
   try {
@@ -311,7 +315,7 @@ app.get('/api/network/internet', async (req, res) => {
   res.json(result);
 });
 
-// ─── API: Schedule ─────────────────────────────────────────
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? API: Schedule <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 app.get('/api/schedule', (req, res) => {
   res.json(scheduler.getStatus());
 });
@@ -323,38 +327,38 @@ app.post('/api/schedule', (req, res) => {
 
 // Manual trigger: run open/close sequence now
 app.post('/api/schedule/open', async (req, res) => {
-  addLogEntry('Sequência de abertura disparada manualmente' + (isRemoteCommand(req) ? ' (remoto)' : ''));
+  addLogEntry('Sequ<ï¿½ï¿½<ï¿½ï¿½ncia de abertura disparada manualmente' + (isRemoteCommand(req) ? ' (remoto)' : ''));
   scheduler.runOpen();
   res.json({ ok: true, message: 'Open sequence started' });
 });
 
 app.post('/api/schedule/close', async (req, res) => {
-  addLogEntry('Sequência de fechamento disparada manualmente' + (isRemoteCommand(req) ? ' (remoto)' : ''));
+  addLogEntry('Sequ<ï¿½ï¿½<ï¿½ï¿½ncia de fechamento disparada manualmente' + (isRemoteCommand(req) ? ' (remoto)' : ''));
   scheduler.runClose();
   res.json({ ok: true, message: 'Close sequence started' });
 });
 
-// ─── Static: config files (plants, pixelmaps) ─────────────
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? Static: config files (plants, pixelmaps) <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 app.use('/files', express.static(path.join(__dirname, '..', 'config')));
 
-// ─── Static: media files (videos for TV cast) ─────────────
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? Static: media files (videos for TV cast) <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 const MEDIA_DIR = path.join(__dirname, '..', 'media');
 app.use('/media', express.static(MEDIA_DIR, {
   maxAge: '1h',  // cache no browser do Cast receiver
-  acceptRanges: true,  // necessário para seek em vídeo
+  acceptRanges: true,  // necess<ï¿½ï¿½<ï¿½ï¿½rio para seek em v<ï¿½ï¿½<ï¿½ï¿½deo
 }));
 
-// Loops — pre-concatenated videos on D: drive (11h seamless)
+// Loops <ï¿½ï¿½?" pre-concatenated videos on D: drive (11h seamless)
 const LOOPS_DIR = 'D:\\aya-expo-data\\loops';
 if (fs.existsSync(LOOPS_DIR)) {
   app.use('/loops', express.static(LOOPS_DIR, {
     maxAge: '1h',
     acceptRanges: true,
   }));
-  console.log('  🔁 Loop files served from D:\\aya-expo-data\\loops\\');
+  console.log('  <ï¿½ï¿½Y"? Loop files served from D:\\aya-expo-data\\loops\\');
 }
 
-// ─── API: Media management (upload, list, assign to TV) ────
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? API: Media management (upload, list, assign to TV) <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 
 // List media files
 app.get('/api/media', (req, res) => {
@@ -388,7 +392,7 @@ app.post('/api/media/upload', (req, res) => {
   // Sanitize filename
   const safe = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
   if (!/\.(mp4|webm|mov|mkv|wav|mp3)$/i.test(safe)) {
-    return res.status(400).json({ error: 'Formato não suportado. Use: mp4, webm, mov, mkv, wav, mp3' });
+    return res.status(400).json({ error: 'Formato n<ï¿½ï¿½oo suportado. Use: mp4, webm, mov, mkv, wav, mp3' });
   }
 
   const filePath = path.join(MEDIA_DIR, safe);
@@ -398,7 +402,7 @@ app.post('/api/media/upload', (req, res) => {
   req.on('data', chunk => { bytes += chunk.length; ws.write(chunk); });
   req.on('end', () => {
     ws.end();
-    addLogEntry(`📁 Arquivo carregado: ${safe} (${Math.round(bytes / 1024 / 1024)}MB)`);
+    addLogEntry(`<ï¿½ï¿½Y"? Arquivo carregado: ${safe} (${Math.round(bytes / 1024 / 1024)}MB)`);
     res.json({ ok: true, name: safe, url: `/media/${safe}`, size: bytes, sizeMB: Math.round(bytes / 1024 / 1024) });
   });
   req.on('error', err => {
@@ -415,7 +419,7 @@ app.delete('/api/media/:filename', (req, res) => {
   if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Not found' });
   try {
     fs.unlinkSync(filePath);
-    addLogEntry(`🗑️ Arquivo removido: ${safe}`);
+    addLogEntry(`<ï¿½ï¿½Y-'<<ï¿½ï¿½? Arquivo removido: ${safe}`);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -436,14 +440,14 @@ app.post('/api/media/assign', async (req, res) => {
     : path.join(MEDIA_DIR, path.basename(videoUrl));
 
   if (!fs.existsSync(sourceFile)) {
-    return res.status(404).json({ error: `Arquivo não encontrado: ${sourceFile}` });
+    return res.status(404).json({ error: `Arquivo n<ï¿½ï¿½oo encontrado: ${sourceFile}` });
   }
 
-  // Update config — store original URL and loop URL
+  // Update config <ï¿½ï¿½?" store original URL and loop URL
   tvConf.videoUrlOriginal = videoUrl;
   if (videoTitle) tvConf.videoTitle = videoTitle;
 
-  addLogEntry(`📺 Vídeo atribuído: ${tvId} → ${videoUrl} (gerando loop 12h...)`);
+  addLogEntry(`<ï¿½ï¿½Y"<ï¿½ï¿½ V<ï¿½ï¿½<ï¿½ï¿½deo atribu<ï¿½ï¿½<ï¿½ï¿½do: ${tvId} <ï¿½ï¿½<ï¿½ï¿½' ${videoUrl} (gerando loop 12h...)`);
 
   // Generate loop in background
   const mediaServer = config.exhibition?.network?.mediaServer || 'localhost';
@@ -455,28 +459,28 @@ app.post('/api/media/assign', async (req, res) => {
     const loopUrl = loopGen.getLoopUrl(videoUrl);
     tvConf.videoUrl = loopUrl;
     persistTvConfig(tvId, tvConf);
-    addLogEntry(`✅ Loop já existe: ${tvId} → ${loopUrl}`);
+    addLogEntry(`<ï¿½ï¿½o. Loop j<ï¿½ï¿½<ï¿½ï¿½ existe: ${tvId} <ï¿½ï¿½<ï¿½ï¿½' ${loopUrl}`);
 
     if (recast) {
       tv.startLoop(tvConf, loopUrl, { title: videoTitle || tvConf.name, baseUrl });
     }
-    return res.json({ ok: true, loop: true, loopUrl, message: `Loop existente atribuído a ${tvConf.name}` });
+    return res.json({ ok: true, loop: true, loopUrl, message: `Loop existente atribu<ï¿½ï¿½<ï¿½ï¿½do a ${tvConf.name}` });
   }
 
-  // Generate loop async — respond immediately, cast when ready
-  res.json({ ok: true, loop: false, generating: true, message: `Gerando loop 12h para ${tvConf.name}... Cast automático quando pronto.` });
+  // Generate loop async <ï¿½ï¿½?" respond immediately, cast when ready
+  res.json({ ok: true, loop: false, generating: true, message: `Gerando loop 12h para ${tvConf.name}... Cast autom<ï¿½ï¿½<ï¿½ï¿½tico quando pronto.` });
 
   loopGen.generate(sourceFile, (loopUrl) => {
     tvConf.videoUrl = loopUrl;
     persistTvConfig(tvId, tvConf);
-    addLogEntry(`✅ Loop gerado: ${tvId} → ${loopUrl}`);
+    addLogEntry(`<ï¿½ï¿½o. Loop gerado: ${tvId} <ï¿½ï¿½<ï¿½ï¿½' ${loopUrl}`);
 
     if (recast) {
       tv.startLoop(tvConf, loopUrl, { title: videoTitle || tvConf.name, baseUrl });
-      addLogEntry(`▶ Cast iniciado: ${tvId} → ${loopUrl}`);
+      addLogEntry(`<ï¿½ï¿½-<ï¿½ï¿½ Cast iniciado: ${tvId} <ï¿½ï¿½<ï¿½ï¿½' ${loopUrl}`);
     }
   }).catch(err => {
-    addLogEntry(`❌ Erro ao gerar loop: ${tvId} — ${err.message}`);
+    addLogEntry(`<ï¿½ï¿½?O Erro ao gerar loop: ${tvId} <ï¿½ï¿½?" ${err.message}`);
     // Fallback: use original video
     tvConf.videoUrl = videoUrl;
     persistTvConfig(tvId, tvConf);
@@ -500,7 +504,7 @@ app.get('/api/media/loops', (req, res) => {
   res.json(loopGen.getStatus());
 });
 
-// ─── API: Config editor ────────────────────────────────────
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? API: Config editor <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 app.get('/api/config', (req, res) => {
   res.json(config);
 });
@@ -532,7 +536,7 @@ app.post('/api/config/test/projector/:i', async (req, res) => {
       const { exec } = require('child_process');
       exec(`ping -n 1 -w 2000 ${p.ip}`, (err, out) => resolve(!err && (out.includes('TTL=') || out.includes('Reply'))));
     });
-    if (!pingOk) return res.json({ ok: false, message: `${p.ip} não responde ao ping. Verifique se está ligado e conectado.` });
+    if (!pingOk) return res.json({ ok: false, message: `${p.ip} n<ï¿½ï¿½oo responde ao ping. Verifique se est<ï¿½ï¿½<ï¿½ï¿½ ligado e conectado.` });
     const portOk = await new Promise(resolve => {
       const net2 = require('net');
       const s = new net2.Socket();
@@ -541,7 +545,7 @@ app.post('/api/config/test/projector/:i', async (req, res) => {
       s.on('error', () => resolve(false));
       s.on('timeout', () => resolve(false));
     });
-    res.json({ ok: portOk, message: portOk ? `${p.name} respondendo via PJLink` : `${p.ip} responde ao ping mas PJLink (porta 4352) não está acessível` });
+    res.json({ ok: portOk, message: portOk ? `${p.name} respondendo via PJLink` : `${p.ip} responde ao ping mas PJLink (porta 4352) n<ï¿½ï¿½oo est<ï¿½ï¿½<ï¿½ï¿½ acess<ï¿½ï¿½<ï¿½ï¿½vel` });
   } catch(e) { res.json({ ok: false, message: e.message }); }
 });
 
@@ -557,7 +561,7 @@ app.post('/api/config/test/camera/:i', async (req, res) => {
       s.on('error', () => resolve(false));
       s.on('timeout', () => resolve(false));
     });
-    res.json({ ok: portOk, message: portOk ? `${c.name} acessível` : `${c.ip} não responde. Verifique o IP e a conexão.` });
+    res.json({ ok: portOk, message: portOk ? `${c.name} acess<ï¿½ï¿½<ï¿½ï¿½vel` : `${c.ip} n<ï¿½ï¿½oo responde. Verifique o IP e a conex<ï¿½ï¿½oo.` });
   } catch(e) { res.json({ ok: false, message: e.message }); }
 });
 
@@ -569,11 +573,59 @@ app.post('/api/config/test/plug/:i', async (req, res) => {
       const { exec } = require('child_process');
       exec(`ping -n 1 -w 2000 ${p.ip}`, (err, out) => resolve(!err && (out.includes('TTL=') || out.includes('Reply'))));
     });
-    res.json({ ok: pingOk, message: pingOk ? `${p.name} respondendo` : `${p.ip} não responde. Verifique o IP e a conexão.` });
+    res.json({ ok: pingOk, message: pingOk ? `${p.name} respondendo` : `${p.ip} n<ï¿½ï¿½oo responde. Verifique o IP e a conex<ï¿½ï¿½oo.` });
   } catch(e) { res.json({ ok: false, message: e.message }); }
 });
 
-// ─── API: Log ──────────────────────────────────────────────
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? API: Smart Plugs (Tuya Cloud) <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
+app.get('/api/plugs', async (req, res) => {
+  const plugs = config.smartplugs || [];
+  if (!tuya.isConfigured() || plugs.length === 0) return res.json([]);
+  try {
+    const status = await tuya.allStatus(plugs);
+    res.json(status);
+  } catch (e) { res.json(plugs.map(p => ({ id: p.id, controls: p.controls, on: null, error: e.message }))); }
+});
+
+app.post('/api/plugs/all/on', async (req, res) => {
+  const plugs = config.smartplugs || [];
+  try {
+    const results = await tuya.allOn(plugs);
+    addLogEntry('<ï¿½ï¿½Y"O Smart plugs ligados' + (isRemoteCommand(req) ? ' (remoto)' : ''));
+    res.json({ ok: true, results });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/plugs/all/off', async (req, res) => {
+  const plugs = config.smartplugs || [];
+  try {
+    const results = await tuya.allOff(plugs);
+    addLogEntry('<ï¿½ï¿½Y"O Smart plugs desligados' + (isRemoteCommand(req) ? ' (remoto)' : ''));
+    res.json({ ok: true, results });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/plugs/:id/on', async (req, res) => {
+  const plug = (config.smartplugs || []).find(p => p.id === req.params.id);
+  if (!plug) return res.status(404).json({ ok: false, error: 'Plug not found' });
+  try {
+    await tuya.turnOn(plug.deviceId);
+    addLogEntry('<ï¿½ï¿½Y"O ' + plug.name + ' ligado' + (isRemoteCommand(req) ? ' (remoto)' : ''));
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+app.post('/api/plugs/:id/off', async (req, res) => {
+  const plug = (config.smartplugs || []).find(p => p.id === req.params.id);
+  if (!plug) return res.status(404).json({ ok: false, error: 'Plug not found' });
+  try {
+    await tuya.turnOff(plug.deviceId);
+    addLogEntry('<ï¿½ï¿½Y"O ' + plug.name + ' desligado' + (isRemoteCommand(req) ? ' (remoto)' : ''));
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? API: Log <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 app.get('/api/log', (req, res) => {
   res.json(readLog());
 });
@@ -588,7 +640,7 @@ app.post('/api/log', (req, res) => {
   res.json({ ok: true });
 });
 
-// ─── API: Commissioning ────────────────────────────────────
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? API: Commissioning <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 app.get('/api/commissioning/steps', (req, res) => {
   res.json(commissioning.STEPS.map(s => ({ id: s.id, label: s.label })));
 });
@@ -633,12 +685,12 @@ app.patch('/api/commissioning/content', (req, res) => {
   res.json({ ok: true, contentStatus: status });
 });
 
-// ─── API: Descoberta de rede ──────────────────────────────
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? API: Descoberta de rede <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 
-// Lookup de MAC por IP — pinga o dispositivo e lê a tabela ARP
+// Lookup de MAC por IP <ï¿½ï¿½?" pinga o dispositivo e l<ï¿½ï¿½<ï¿½ï¿½ a tabela ARP
 app.get('/api/discover/mac', async (req, res) => {
   const { ip } = req.query;
-  if (!ip) return res.status(400).json({ error: 'Parâmetro ip obrigatório' });
+  if (!ip) return res.status(400).json({ error: 'Par<ï¿½ï¿½<ï¿½ï¿½metro ip obrigat<ï¿½ï¿½<ï¿½ï¿½rio' });
   try {
     const result = await network.lookupMac(ip);
     res.json(result);
@@ -647,11 +699,11 @@ app.get('/api/discover/mac', async (req, res) => {
   }
 });
 
-// Varredura completa — descobre todos os dispositivos na subnet com IP + MAC + tipo
+// Varredura completa <ï¿½ï¿½?" descobre todos os dispositivos na subnet com IP + MAC + tipo
 // Usa SSE (Server-Sent Events) para enviar progresso em tempo real
 app.get('/api/discover/subnet', async (req, res) => {
   const subnet = req.query.subnet || config.exhibition?.network?.subnet || '192.168.0.0/24';
-  // Extrai os 3 primeiros octetos: "192.168.0.0/24" → "192.168.0"
+  // Extrai os 3 primeiros octetos: "192.168.0.0/24" <ï¿½ï¿½<ï¿½ï¿½' "192.168.0"
   const base = subnet.replace(/\/\d+$/, '').split('.').slice(0, 3).join('.');
 
   res.setHeader('Content-Type', 'text/event-stream');
@@ -672,13 +724,13 @@ app.get('/api/discover/subnet', async (req, res) => {
   res.end();
 });
 
-// ─── API: TVs (Google Cast + WOL) ─────────────────────────
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? API: TVs (Google Cast + WOL) <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 app.get('/api/tv', (req, res) => {
   const tvs = config.tvs || [];
   res.json(tvs.map(t => ({ ...t, password: undefined })));
 });
 
-// ── Bulk TV operations (MUST come before :id routes) ──────
+// <ï¿½ï¿½"?<ï¿½ï¿½"? Bulk TV operations (MUST come before :id routes) <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 app.post('/api/tv/all/on', async (req, res) => {
   const tvs = config.tvs || [];
   const results = await Promise.allSettled(tvs.map(t => tv.powerOn(t).then(() => ({ id: t.id, ok: true }))));
@@ -699,10 +751,10 @@ app.post('/api/tv/all/cast', async (req, res) => {
 
   const results = [];
   for (const t of tvs) {
-    if (!t.videoUrl) { results.push({ id: t.id, ok: false, error: 'videoUrl não configurada' }); continue; }
+    if (!t.videoUrl) { results.push({ id: t.id, ok: false, error: 'videoUrl n<ï¿½ï¿½oo configurada' }); continue; }
     try {
       const result = await tv.startLoop(t, t.videoUrl, { title: t.videoTitle, baseUrl });
-      if (result?.wakingUp) addLogEntry(`📺 ${t.name}: WOL enviado — cast automático em ~35s`);
+      if (result?.wakingUp) addLogEntry(`<ï¿½ï¿½Y"<ï¿½ï¿½ ${t.name}: WOL enviado <ï¿½ï¿½?" cast autom<ï¿½ï¿½<ï¿½ï¿½tico em ~35s`);
       results.push({ id: t.id, ok: true, looping: true, wakingUp: result?.wakingUp || false });
     } catch (err) {
       results.push({ id: t.id, ok: false, error: err.message });
@@ -719,11 +771,11 @@ app.post('/api/tv/all/stop', async (req, res) => {
   res.json(results.map((r, i) => r.status === 'fulfilled' ? r.value : { id: tvs[i].id, ok: false, error: r.reason?.message }));
 });
 
-// ── Individual TV operations ──────────────────────────────
+// <ï¿½ï¿½"?<ï¿½ï¿½"? Individual TV operations <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 app.get('/api/tv/:id/status', async (req, res) => {
   const tvs = config.tvs || [];
   const t = tvs.find(t => t.id === req.params.id);
-  if (!t) return res.status(404).json({ error: 'TV não encontrada' });
+  if (!t) return res.status(404).json({ error: 'TV n<ï¿½ï¿½oo encontrada' });
   try {
     const status = await tv.getStatus(t);
     res.json({ id: t.id, name: t.name, ...status });
@@ -735,7 +787,7 @@ app.get('/api/tv/:id/status', async (req, res) => {
 app.post('/api/tv/:id/on', async (req, res) => {
   const tvs = config.tvs || [];
   const t = tvs.find(t => t.id === req.params.id);
-  if (!t) return res.status(404).json({ error: 'TV não encontrada' });
+  if (!t) return res.status(404).json({ error: 'TV n<ï¿½ï¿½oo encontrada' });
   try {
     await tv.powerOn(t);
     res.json({ ok: true, message: `Wake-on-LAN enviado para ${t.name}` });
@@ -747,7 +799,7 @@ app.post('/api/tv/:id/on', async (req, res) => {
 app.post('/api/tv/:id/off', async (req, res) => {
   const tvs = config.tvs || [];
   const t = tvs.find(t => t.id === req.params.id);
-  if (!t) return res.status(404).json({ error: 'TV não encontrada' });
+  if (!t) return res.status(404).json({ error: 'TV n<ï¿½ï¿½oo encontrada' });
   try {
     const result = await tv.powerOff(t);
     res.json({ ok: true, message: result.message });
@@ -756,21 +808,21 @@ app.post('/api/tv/:id/off', async (req, res) => {
   }
 });
 
-// Cast video to a specific TV (with WOL automático + loop monitoring)
+// Cast video to a specific TV (with WOL autom<ï¿½ï¿½<ï¿½ï¿½tico + loop monitoring)
 app.post('/api/tv/:id/cast', async (req, res) => {
   const tvs = config.tvs || [];
   const t = tvs.find(t => t.id === req.params.id);
-  if (!t) return res.status(404).json({ error: 'TV não encontrada' });
+  if (!t) return res.status(404).json({ error: 'TV n<ï¿½ï¿½oo encontrada' });
   const { url, title } = req.body;
   const videoUrl = url || t.videoUrl;
-  if (!videoUrl) return res.status(400).json({ error: 'url obrigatória (body ou config tv.videoUrl)' });
+  if (!videoUrl) return res.status(400).json({ error: 'url obrigat<ï¿½ï¿½<ï¿½ï¿½ria (body ou config tv.videoUrl)' });
   try {
     const mediaServer = config.exhibition?.network?.mediaServer || 'localhost';
     const port = config.server?.port || 3000;
     const baseUrl = `http://${mediaServer}:${port}`;
     const result = await tv.startLoop(t, videoUrl, { title: title || t.videoTitle, baseUrl });
     if (result?.wakingUp) {
-      addLogEntry(`📺 ${t.name}: WOL enviado — cast automático em ~35s`);
+      addLogEntry(`<ï¿½ï¿½Y"<ï¿½ï¿½ ${t.name}: WOL enviado <ï¿½ï¿½?" cast autom<ï¿½ï¿½<ï¿½ï¿½tico em ~35s`);
     }
     res.json({ ok: true, looping: true, wakingUp: result?.wakingUp || false, videoUrl });
   } catch (e) {
@@ -782,7 +834,7 @@ app.post('/api/tv/:id/cast', async (req, res) => {
 app.post('/api/tv/:id/stop', async (req, res) => {
   const tvs = config.tvs || [];
   const t = tvs.find(t => t.id === req.params.id);
-  if (!t) return res.status(404).json({ error: 'TV não encontrada' });
+  if (!t) return res.status(404).json({ error: 'TV n<ï¿½ï¿½oo encontrada' });
   try {
     tv.stopLoop(t); // stop loop monitor
     const result = await tv.castStop(t);
@@ -796,9 +848,9 @@ app.post('/api/tv/:id/stop', async (req, res) => {
 app.post('/api/tv/:id/volume', async (req, res) => {
   const tvs = config.tvs || [];
   const t = tvs.find(t => t.id === req.params.id);
-  if (!t) return res.status(404).json({ error: 'TV não encontrada' });
+  if (!t) return res.status(404).json({ error: 'TV n<ï¿½ï¿½oo encontrada' });
   const { level } = req.body;
-  if (level === undefined) return res.status(400).json({ error: 'level obrigatório (0-100)' });
+  if (level === undefined) return res.status(400).json({ error: 'level obrigat<ï¿½ï¿½<ï¿½ï¿½rio (0-100)' });
   try {
     const result = await tv.setVolume(t, level);
     res.json({ ok: true, ...result });
@@ -814,10 +866,23 @@ app.get('/api/tv/loops', (req, res) => {
 
 // (bulk TV routes defined above, before :id routes)
 
-// ─── API: Computer Vision ──────────────────────────────────
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? API: Computer Vision <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 app.get('/api/cv/status', (req, res) => {
   res.json(cvManager.getStatus());
 });
+// ─── API: ReID — visitantes únicos + dwell real ───────────────────────────────
+app.get('/api/reid', (req, res) => {
+  const state = cvManager.getReidState();
+  if (!state) return res.status(503).json({ error: 'reid not ready' });
+  res.json(state);
+});
+
+app.get('/api/reid/today', (req, res) => {
+  const state = cvManager.getReidState();
+  if (!state) return res.status(503).json({ error: 'reid not ready' });
+  res.json(state.today);
+});
+
 
 app.get('/api/cv/count', (req, res) => {
   const status = cvManager.getStatus();
@@ -911,7 +976,7 @@ app.post('/api/cv/heatmap/reset', (req, res) => {
   res.json({ ok, message: ok ? 'Heatmap reset' : 'Failed to reset' });
 });
 
-// Counter daily history — list saved daily files
+// Counter daily history <ï¿½ï¿½?" list saved daily files
 app.get('/api/cv/counter/history', (req, res) => {
   const counterDir = path.join(__dirname, '..', 'cv', 'output', 'counter');
   try {
@@ -940,7 +1005,7 @@ app.get('/api/cv/counter/history/:date', (req, res) => {
   }
 });
 
-// ─── API: CV Daily Logs ──────────────────────────────────
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? API: CV Daily Logs <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 app.get('/api/cv/daily', (req, res) => {
   res.json(cvLogger.listDays());
 });
@@ -957,7 +1022,7 @@ app.get('/api/cv/daily/today/summary', (req, res) => {
   res.json(summary);
 });
 
-// ─── API: CV Reports (weekly/monthly aggregation) ────────
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? API: CV Reports (weekly/monthly aggregation) <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 app.get('/api/cv/report/week', (req, res) => res.json(cvReport.thisWeek()));
 app.get('/api/cv/report/month', (req, res) => res.json(cvReport.thisMonth()));
 app.get('/api/cv/report/last7', (req, res) => res.json(cvReport.last7()));
@@ -970,7 +1035,67 @@ app.get('/api/cv/report/:from/:to', (req, res) => {
   res.json(cvReport.aggregate(from, to));
 });
 
-// ─── API: Audio (Windows Master Volume) ──────────────────
+// Public report from openingDate to today (Demï¿½ï¿½trius format)
+app.get('/api/cv/report/public', (req, res) => {
+  try {
+    res.json(cvReport.publicReport());
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// CV Report HTML preview (16:9 widescreen for DemÃ©trius)
+app.get('/api/cv/report/preview', (req, res) => {
+  try {
+    let data = cvReport.publicReport();
+    let useSample = false;
+
+    // Fall back to sample data if no real data yet
+    if (!data || data.status === 'no_data' || (data.visitors && data.visitors.total === 0)) {
+      useSample = true;
+      data = {
+        openingDate: '2026-03-26',
+        daysOpen: 6,
+        generatedAt: new Date().toISOString(),
+        visitors: {
+          total: 3847,
+          avgPerDay: 641,
+          peakDay: { date: '2026-03-29', entries: 923 },
+          peakHour: '14h (847 visitantes no total da semana)'
+        },
+        experience: {
+          salaImersiva: { avgDwell: '8min 12s', avgSeconds: 492, maxSeconds: 1847 },
+          galeria: { avgDwell: '3min 45s', avgSeconds: 225 }
+        },
+        trend: [
+          { date: '2026-03-26', visitors: 290, peak: 8, peakTime: '18:30' },
+          { date: '2026-03-27', visitors: 612, peak: 15, peakTime: '14:15' },
+          { date: '2026-03-28', visitors: 734, peak: 19, peakTime: '15:00' },
+          { date: '2026-03-29', visitors: 923, peak: 24, peakTime: '14:30' },
+          { date: '2026-03-30', visitors: 0, peak: 0, peakTime: null },
+          { date: '2026-03-31', visitors: 621, peak: 16, peakTime: '13:45' },
+          { date: '2026-04-01', visitors: 667, peak: 17, peakTime: '15:15' }
+        ],
+        weekday: {
+          'Qui': { avgEntries: 456, days: 1 },
+          'Sex': { avgEntries: 673, days: 1 },
+          'SÃ¡b': { avgEntries: 923, days: 1 },
+          'Dom': { avgEntries: 734, days: 1 },
+          'Ter': { avgEntries: 621, days: 1 },
+          'Qua': { avgEntries: 667, days: 1 }
+        }
+      };
+    }
+
+    const html = cvReportHtml.generateHTML(data, useSample);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+  } catch (e) {
+    res.status(500).send(`<pre>Error: ${e.message}\n${e.stack}</pre>`);
+  }
+});
+
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? API: Audio (Windows Master Volume) <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 app.get('/api/audio/volume', (req, res) => {
   const level = audio.getVolume()
   res.json({ level, muted: level === 0 })
@@ -979,14 +1104,27 @@ app.get('/api/audio/volume', (req, res) => {
 app.post('/api/audio/volume', (req, res) => {
   const { level } = req.body
   if (level === undefined || isNaN(Number(level))) {
-    return res.status(400).json({ error: 'level (0-100) obrigatório' })
+    return res.status(400).json({ error: 'level (0-100) obrigat<ï¿½ï¿½<ï¿½ï¿½rio' })
   }
   const result = audio.setVolume(Number(level))
-  addLogEntry(`🔊 Volume: ${result}%` + (isRemoteCommand(req) ? ' (remoto)' : ''))
+  addLogEntry(`<ï¿½ï¿½Y"S Volume: ${result}%` + (isRemoteCommand(req) ? ' (remoto)' : ''))
+  // Persiste no config para sobreviver a reinícios
+  try {
+    const cfgPath = path.join(__dirname, '..', 'config', `${configName}.json`)
+    let cfgRaw = fs.readFileSync(cfgPath, 'utf8')
+    const cfgBom = cfgRaw.charCodeAt(0) === 0xFEFF
+    if (cfgBom) cfgRaw = cfgRaw.slice(1)
+    const cfg = JSON.parse(cfgRaw)
+    if (cfg.schedule) cfg.schedule.audioVolume = result
+    fs.writeFileSync(cfgPath, (cfgBom ? '\uFEFF' : '') + JSON.stringify(cfg, null, 2), 'utf8')
+    if (config.schedule) config.schedule.audioVolume = result
+  } catch (e) {
+    console.error('[Audio] Erro ao persistir audioVolume:', e.message)
+  }
   res.json({ ok: true, level: result })
 })
 
-// ─── API: Server Health (GPU, CPU, RAM, disco) ────────────
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? API: Server Health (GPU, CPU, RAM, disco) <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 app.get('/api/server/health', (req, res) => {
   const current = serverHealth.getCurrent();
   if (!current) {
@@ -1028,7 +1166,7 @@ app.get('/api/server/summary/:date', (req, res) => {
   res.json(summary);
 });
 
-// ─── API: Timelapse ────────────────────────────────────────
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? API: Timelapse <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 app.get('/api/timelapse/stats', (req, res) => {
   res.json({ ...timelapse.getStats(), storage: timelapse.getStorageStats() });
 });
@@ -1066,7 +1204,7 @@ app.get('/api/timelapse/:date/:camId/at/:time', (req, res) => {
   res.send(buffer);
 });
 
-// ─── API: Health ───────────────────────────────────────────
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? API: Health <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 app.get('/api/health', async (req, res) => {
   const inet = await network.checkInternet();
   const cvStatus = cvManager.getStatus();
@@ -1094,7 +1232,7 @@ app.get('/api/health', async (req, res) => {
   });
 });
 
-// ─── WebSocket for real-time updates ───────────────────────
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? WebSocket for real-time updates <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 const wss = new WebSocket.Server({ server });
 const clients = new Set();
 
@@ -1123,13 +1261,13 @@ function broadcast(type, data) {
   }
 }
 
-// ─── Start ─────────────────────────────────────────────────
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? Start <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 const PORT = config.server?.port || 3000;
 const HOST = config.server?.host || '0.0.0.0';
 
 server.listen(PORT, HOST, () => {
-  console.log(`  🌐 http://localhost:${PORT}`);
-  console.log(`  🌐 http://${config.exhibition.network?.mediaServer || 'localhost'}:${PORT}\n`);
+  console.log(`  <ï¿½ï¿½YO? http://localhost:${PORT}`);
+  console.log(`  <ï¿½ï¿½YO? http://${config.exhibition.network?.mediaServer || 'localhost'}:${PORT}\n`);
 
   // Start polling
   projectors.startPolling(config.pjlink?.pollInterval || 30000);
@@ -1137,21 +1275,22 @@ server.listen(PORT, HOST, () => {
   scheduler.start();
   portalSync.start();
   cvManager.start();
-  cvLogger.start(cvManager);
+  cvLogger.start(cvManager, config);
+  cvNotify.start(cvReport, config);
   serverHealth.start();
   timelapse.start();
 });
 
-// ─── Uncaught errors — log but don't crash ─────────────────
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? Uncaught errors <ï¿½ï¿½?" log but don't crash <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 process.on('uncaughtException', (err) => {
-  console.error(`  ❌ Uncaught exception: ${err.message}`);
+  console.error(`  <ï¿½ï¿½?O Uncaught exception: ${err.message}`);
   console.error(err.stack);
 });
 process.on('unhandledRejection', (reason) => {
-  console.error(`  ❌ Unhandled rejection: ${reason}`);
+  console.error(`  <ï¿½ï¿½?O Unhandled rejection: ${reason}`);
 });
 
-// ─── Graceful shutdown ─────────────────────────────────────
+// <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"? Graceful shutdown <ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?<ï¿½ï¿½"?
 process.on('SIGINT', () => {
   console.log('\n  Shutting down...');
   projectors.stopPolling();
@@ -1159,9 +1298,12 @@ process.on('SIGINT', () => {
   scheduler.stop();
   portalSync.stop();
   cvLogger.stop();
+  cvNotify.stop();
   cvManager.stop();
   serverHealth.stop();
   timelapse.stop();
   server.close();
   process.exit(0);
 });
+
+

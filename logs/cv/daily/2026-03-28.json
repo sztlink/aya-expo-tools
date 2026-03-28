@@ -1,0 +1,165 @@
+{
+  "date": "2026-03-28",
+  "samples": 916,
+  "publicSamples": 325,
+  "firstSample": "2026-03-28T00:00:25.576Z",
+  "lastSample": "2026-03-28T17:05:00.595Z",
+  "counter": {
+    "entries": 122,
+    "exits": 131,
+    "occupancy": 0
+  },
+  "counterHourly": {
+    "13": {
+      "entries": 23,
+      "exits": 14
+    },
+    "14": {
+      "entries": 2,
+      "exits": 0
+    }
+  },
+  "peak": {
+    "count": 19,
+    "time": "2026-03-28T15:09:54.976Z"
+  },
+  "zones": {
+    "sala-imersiva": {
+      "max": 11,
+      "avg": 1.2,
+      "minutesOccupied": 143,
+      "minutesTotal": 325,
+      "occupancyRate": 44
+    },
+    "galeria": {
+      "max": 7,
+      "avg": 1,
+      "minutesOccupied": 147,
+      "minutesTotal": 325,
+      "occupancyRate": 45.2
+    },
+    "corredor": {
+      "max": 7,
+      "avg": 1,
+      "minutesOccupied": 147,
+      "minutesTotal": 325,
+      "occupancyRate": 45.2
+    },
+    "entrada": {
+      "max": 7,
+      "avg": 1.4,
+      "minutesOccupied": 196,
+      "minutesTotal": 325,
+      "occupancyRate": 60.3
+    }
+  },
+  "dwell": {
+    "sala-imersiva": {
+      "samples": 236,
+      "avgSeconds": 10,
+      "avgFormatted": "10s",
+      "maxSeconds": 67,
+      "activeVisitors": 2
+    },
+    "galeria": {
+      "samples": 82,
+      "avgSeconds": 21,
+      "avgFormatted": "21s",
+      "maxSeconds": 300,
+      "activeVisitors": 2
+    },
+    "corredor": {
+      "samples": 71,
+      "avgSeconds": 32,
+      "avgFormatted": "32s",
+      "maxSeconds": 246,
+      "activeVisitors": 5
+    },
+    "galeria-principal": {
+      "samples": 51,
+      "avgSeconds": 30,
+      "avgFormatted": "30s",
+      "maxSeconds": 202,
+      "activeVisitors": 1
+    }
+  },
+  "hourly": {
+    "11": {
+      "samples": 30,
+      "zones": {
+        "sala-imersiva": 0.1,
+        "galeria": 0.1,
+        "corredor": 0.2,
+        "entrada": 0.4
+      },
+      "avgTotal": 0.8
+    },
+    "12": {
+      "samples": 59,
+      "zones": {
+        "sala-imersiva": 0.3,
+        "galeria": 0.3,
+        "corredor": 0.5,
+        "entrada": 2
+      },
+      "avgTotal": 3.1
+    },
+    "13": {
+      "samples": 57,
+      "zones": {
+        "sala-imersiva": 0.6,
+        "galeria": 0.6,
+        "corredor": 0.8,
+        "entrada": 1.5
+      },
+      "avgTotal": 3.5
+    },
+    "14": {
+      "samples": 55,
+      "zones": {
+        "sala-imersiva": 2,
+        "galeria": 1.5,
+        "corredor": 1.4,
+        "entrada": 2.7
+      },
+      "avgTotal": 7.6
+    },
+    "15": {
+      "samples": 59,
+      "zones": {
+        "sala-imersiva": 2.7,
+        "galeria": 2,
+        "corredor": 1.3,
+        "entrada": 1.5,
+        "galeria-principal": 0.6
+      },
+      "avgTotal": 8.1
+    },
+    "16": {
+      "samples": 59,
+      "zones": {
+        "sala-imersiva": 1.2,
+        "galeria": 1.1,
+        "corredor": 1.4,
+        "galeria-principal": 2.3
+      },
+      "avgTotal": 6
+    },
+    "17": {
+      "samples": 6,
+      "zones": {
+        "sala-imersiva": 0.5,
+        "galeria": 1.5,
+        "corredor": 2.5,
+        "galeria-principal": 0.7
+      },
+      "avgTotal": 5.2
+    }
+  },
+  "reid": {
+    "uniqueVisitors": 25,
+    "completedVisits": 1,
+    "avgDwellSeconds": 18,
+    "maxDwellSeconds": 18
+  }
+}

@@ -1,0 +1,1 @@
+Get-NetNeighbor -AddressFamily IPv4 | Where-Object { $_.IPAddress -like "192.168.0.*" -and $_.State -ne "Unreachable" } | Select-Object IPAddress, LinkLayerAddress, State | Sort-Object { [int]($_.IPAddress.Split(".")[-1]) } | Format-Table -AutoSize

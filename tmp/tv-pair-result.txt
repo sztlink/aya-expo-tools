@@ -1,0 +1,2 @@
+TLS connected — sending auth request
+ERR: 44250000:error:0A000416:SSL routines:ssl3_read_bytes:sslv3 alert certificate unknown:c:\ws\deps\openssl\openssl\ssl\record\rec_layer_s3.c:1605:SSL alert number 46

@@ -10,6 +10,7 @@
  *   GET /api/cv/report/last7         — last 7 days
  *   GET /api/cv/report/last30        — last 30 days
  *   GET /api/cv/report/:from/:to     — custom range (YYYY-MM-DD)
+ *   GET /api/cv/report/public        — public report from openingDate to today (Demétrius format)
  */
 
 const fs = require('fs');
@@ -18,7 +19,16 @@ const cvLogger = require('./cv-logger');
 
 const DAILY_DIR = path.join(__dirname, '..', 'logs', 'cv', 'daily');
 
-// ── Date helpers ────────────────────────────────────────────
+// Load openingDate from config
+function getOpeningDate() {
+  try {
+    const configPath = path.join(__dirname, '..', 'config', 'beleza-astral.json');
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    return config.exhibition?.openingDate || null;
+  } catch { return null; }
+}
+
+// ━━━ Date helpers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function today() { return new Date().toISOString().slice(0, 10); }
 
@@ -57,9 +67,12 @@ function dateRange(from, to) {
   return dates;
 }
 
-// ── Load daily summaries ────────────────────────────────────
+// ━━━ Load daily summaries ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function loadDaily(date) {
+  const openingDate = getOpeningDate();
+  if (openingDate && date < openingDate) return null; // pre-opening, skip
+  
   // For today, generate on-the-fly
   if (date === today()) {
     return cvLogger.getDailySummary(date);
@@ -69,7 +82,7 @@ function loadDaily(date) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
 }
 
-// ── Aggregate ───────────────────────────────────────────────
+// ━━━ Aggregate ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function aggregate(from, to) {
   const dates = dateRange(from, to);
@@ -91,16 +104,16 @@ function aggregate(from, to) {
     };
   }
 
-  // ── Totals ──
+  // ━━━ Totals ━━━
   const totalEntries = days.reduce((a, d) => a + (d.counter?.entries || 0), 0);
   const totalExits = days.reduce((a, d) => a + (d.counter?.exits || 0), 0);
   const avgDaily = Math.round(totalEntries / days.length);
 
-  // ── Peak day ──
+  // ━━━ Peak day ━━━
   const peakDay = days.reduce((best, d) =>
     (d.counter?.entries || 0) > (best.counter?.entries || 0) ? d : best, days[0]);
 
-  // ── Peak hour across all days ──
+  // ━━━ Peak hour across all days ━━━
   const hourlyAgg = {};
   for (const d of days) {
     for (const [hour, data] of Object.entries(d.counterHourly || {})) {
@@ -121,7 +134,7 @@ function aggregate(from, to) {
   const peakHour = Object.entries(hourlyAgg)
     .sort((a, b) => b[1].entries - a[1].entries)[0];
 
-  // ── Zone stats ──
+  // ━━━ Zone stats ━━━
   const zoneIds = new Set();
   days.forEach(d => Object.keys(d.zones || {}).forEach(z => zoneIds.add(z)));
 
@@ -144,7 +157,7 @@ function aggregate(from, to) {
     };
   }
 
-  // ── Dwell time ──
+  // ━━━ Dwell time ━━━
   const dwellAgg = {};
   for (const zid of zoneIds) {
     const daysWithDwell = days.filter(d => d.dwell?.[zid]?.samples > 0);
@@ -165,7 +178,7 @@ function aggregate(from, to) {
     };
   }
 
-  // ── Day-by-day breakdown ──
+  // ━━━ Day-by-day breakdown ━━━
   const dailyBreakdown = days.map(d => ({
     date: d.date,
     entries: d.counter?.entries || 0,
@@ -175,7 +188,7 @@ function aggregate(from, to) {
     samples: d.samples || 0,
   }));
 
-  // ── Weekday pattern ──
+  // ━━━ Weekday pattern ━━━
   const weekdayNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
   const weekdayAgg = {};
   for (const d of days) {
@@ -217,7 +230,7 @@ function aggregate(from, to) {
   };
 }
 
-// ── Pre-built ranges ────────────────────────────────────────
+// ━━━ Pre-built ranges ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function thisWeek() {
   const t = today();
@@ -239,4 +252,63 @@ function last30() {
   return aggregate(addDays(t, -29), t);
 }
 
-module.exports = { aggregate, thisWeek, thisMonth, last7, last30 };
+/**
+ * Public report from openingDate to today — Demétrius format
+ * Optimized for: total visitors, avg/day, peak hour, dwell time, trend
+ */
+function publicReport() {
+  const openingDate = getOpeningDate() || today();
+  const report = aggregate(openingDate, today());
+  
+  if (report.daysWithData === 0) {
+    return {
+      status: 'no_data',
+      openingDate,
+      message: 'Nenhum dado público disponível ainda.',
+    };
+  }
+
+  // Peak hour label
+  const peakHourEntry = report.visitors?.peakHour;
+  const peakHourLabel = peakHourEntry
+    ? `${peakHourEntry.hour}h (${peakHourEntry.totalEntries} visitantes no total)`
+    : null;
+
+  // Sala imersiva dwell
+  const salaImersivaDwell = report.dwell?.['sala-imersiva'];
+
+  // Trend: last 7 days from opening
+  const trend = (report.daily || []).slice(-7).map(d => ({
+    date: d.date,
+    visitors: d.entries,
+    peak: d.peak,
+    peakTime: d.peakTime,
+  }));
+
+  return {
+    openingDate,
+    daysOpen: report.daysWithData,
+    generatedAt: report.generatedAt,
+    visitors: {
+      total: report.visitors?.total || 0,
+      avgPerDay: report.visitors?.avgDaily || 0,
+      peakDay: report.visitors?.peakDay || null,
+      peakHour: peakHourLabel,
+    },
+    experience: {
+      salaImersiva: salaImersivaDwell ? {
+        avgDwell: salaImersivaDwell.avgFormatted,
+        avgSeconds: salaImersivaDwell.avgSeconds,
+        maxSeconds: salaImersivaDwell.maxSeconds,
+      } : null,
+      galeria: report.dwell?.['galeria'] ? {
+        avgDwell: report.dwell['galeria'].avgFormatted,
+        avgSeconds: report.dwell['galeria'].avgSeconds,
+      } : null,
+    },
+    trend,
+    weekday: report.weekday || {},
+  };
+}
+
+module.exports = { aggregate, thisWeek, thisMonth, last7, last30, publicReport };

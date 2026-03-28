@@ -1,0 +1,18 @@
+=== Timelapse Stories 9:16 ===
+Periodo: 14h45 - 17h00
+  cam-2: 136 frames (144510 ate 165956)
+  cam-1: 136 frames (144510 ate 165956)
+  cam-3: 136 frames (144510 ate 165956)
+Frames sincronizados: 136  |  Duracao: 13.6s @ 10fps
+Logo: 85x48
+Renderizando 136 frames compostos...
+  Frame 1/136  (14h45)
+  Frame 31/136  (15h15)
+  Frame 61/136  (15h44)
+  Frame 91/136  (16h14)
+  Frame 121/136  (16h44)
+  Frame 136/136  (16h59)
+Codificando com ffmpeg...
+VIDEO OK: C:\aya-expo-tools\tmp\timelapse-stories.mp4  (19.7 MB)  13.6s
+Concluido.
+done 

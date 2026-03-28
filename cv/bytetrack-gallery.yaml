@@ -1,0 +1,18 @@
+# ByteTrack customizado para galeria de arte — AYA Expo Tools
+# Visitantes se movem lentamente, param para ver obras, voltam.
+#
+# track_buffer: mantido em 90 frames independente do FPS.
+# A 1fps: 90s de track vivo   (amplo — pessoas param muito)
+# A 2fps: 45s de track vivo
+# A 3fps: 30s de track vivo   (suficiente para oclusão breve)
+#
+# match_thresh reduzido: pessoas lentas = menor IoU entre frames →
+# precisamos de threshold mais permissivo na associação.
+
+tracker_type: bytetrack
+track_high_thresh: 0.25    # manter baixo — galeria tem iluminação variável
+track_low_thresh:  0.10    # recuperar detecções fracas (luz de spot)
+new_track_thresh:  0.25    # criar novo track com confiança razoável
+track_buffer:      90      # frames vivo após desaparecer (ajustar via FPS)
+match_thresh:      0.70    # reduzido vs padrão 0.8 (IoU menor a fps baixo)
+fuse_score:        True    # fundir score de detecção com IoU

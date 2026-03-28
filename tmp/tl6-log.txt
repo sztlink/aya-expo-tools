@@ -1,0 +1,35 @@
+=== Timelapse Stories v6 - heatmap sutil ===
+cam-2: 176 frames [144510 -> 173956]
+cam-1: 176 frames [144510 -> 173956]
+cam-3: 176 frames [144510 -> 173956]
+Total: 176 frames | 29.3s @ 6fps
+Heatmap max alpha: 0.35
+FASE 1 - YOLO heatmap acumulado nas 3 cameras
+Device: cuda:0
+cam-2: 1/176 ETA 7s
+cam-2: 51/176 ETA 3s
+cam-2: 101/176 ETA 2s
+cam-2: 151/176 ETA 1s
+cam-2: 176/176 ETA 0s
+cam-1: 1/176 ETA 3s
+cam-1: 51/176 ETA 3s
+cam-1: 101/176 ETA 2s
+cam-1: 151/176 ETA 1s
+cam-1: 176/176 ETA 0s
+cam-3: 1/176 ETA 4s
+cam-3: 51/176 ETA 3s
+cam-3: 101/176 ETA 2s
+cam-3: 151/176 ETA 1s
+cam-3: 176/176 ETA 0s
+FASE 2 - render
+Render: 1/176 14h45
+Render: 41/176 15h25
+Render: 81/176 16h04
+Render: 121/176 16h44
+Render: 161/176 17h24
+Render: 176/176 17h39
+FASE 3 - ffmpeg
+VIDEO OK -> C:\aya-expo-tools\tmp\timelapse-stories-v6.mp4
+31.8 MB | 29.3s | audio=sim
+Concluido.
+done 

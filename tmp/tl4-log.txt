@@ -1,0 +1,36 @@
+=== Timelapse Stories v4 - heatmap nas 3 cameras ===
+cam-2: 136 frames [144510 -> 165956]
+cam-1: 136 frames [144510 -> 165956]
+cam-3: 136 frames [144510 -> 165956]
+Total: 136 frames | 13.6s @ 10fps
+Logo AYA: (149, 84)
+Logo SZT: (131, 74)
+FASE 1 - YOLO heatmap acumulado nas 3 cameras
+Device: cuda:0
+cam-2: 1/136 ETA 6s
+cam-2: 41/136 ETA 3s
+cam-2: 81/136 ETA 1s
+cam-2: 121/136 ETA 0s
+cam-2: 136/136 ETA 0s
+cam-1: 1/136 ETA 2s
+cam-1: 41/136 ETA 2s
+cam-1: 81/136 ETA 1s
+cam-1: 121/136 ETA 0s
+cam-1: 136/136 ETA 0s
+cam-3: 1/136 ETA 4s
+cam-3: 41/136 ETA 2s
+cam-3: 81/136 ETA 1s
+cam-3: 121/136 ETA 0s
+cam-3: 136/136 ETA 0s
+FASE 2 - render
+Render: 1/136 14h45
+Render: 31/136 15h15
+Render: 61/136 15h44
+Render: 91/136 16h14
+Render: 121/136 16h44
+Render: 136/136 16h59
+FASE 3 - ffmpeg
+VIDEO OK -> C:\aya-expo-tools\tmp\timelapse-stories-v4.mp4
+18.6 MB | 13.6s | audio=sim
+Concluido.
+done 

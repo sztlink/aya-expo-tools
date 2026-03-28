@@ -1,240 +1,256 @@
 /**
- * AYA Expo Tools — Timelapse Capture
+ * AYA Expo Tools — Timelapse / Frame Capture adaptativo
  *
- * Salva snapshot de cada câmera a cada INTERVAL segundos.
- * Estrutura: logs/timelapse/YYYY-MM-DD/cam-1/HHMMSS.jpg
+ * Dois modos baseados no horário da expo (schedule do config):
+ *   ABERTA  → 1fps  — dados para CV/ReID
+ *   FECHADA → 1/min — documentação visual
  *
- * Sincronizado com o health log (mesmo timestamp base)
- * para correlacionar temperatura da GPU com o que estava acontecendo na sala.
+ * Circular buffer: quando D: livre < FREE_THRESHOLD_GB → deleta dia mais antigo.
  *
- * Storage estimate: 4 cams × 60s × 12h/day × ~20KB = ~56MB/day
+ * Segunda-feira: loga aviso de pickup para o Leonardo (HD externo → 4090 AYA Studio).
+ *
+ * Estrutura: D:\aya-expo-data\timelapse\YYYY-MM-DD\cam-X\HHMMSS.jpg
  */
 
-const fs = require('fs')
-const path = require('path')
+'use strict';
 
-// Use D: drive if available, fallback to local
+const fs   = require('fs');
+const path = require('path');
+
 const BASE_DIR = fs.existsSync('D:\\aya-expo-data\\timelapse')
   ? 'D:\\aya-expo-data\\timelapse'
-  : path.join(__dirname, '..', 'logs', 'timelapse')
-const DEFAULT_INTERVAL = 60_000  // 60s
+  : path.join(__dirname, '..', 'logs', 'timelapse');
 
-class TimelapseCapture {
-  /**
-   * @param {object} cameras — CameraManager instance
-   * @param {object} [opts]
-   * @param {number} [opts.interval] — ms between captures (default 60s)
-   */
-  constructor(cameras, opts = {}) {
-    this.cameras = cameras
-    this.interval = opts.interval || DEFAULT_INTERVAL
-    this._timer = null
-    this._capturing = false
-    this._stats = {
-      started: null,
-      captures: 0,
-      errors: 0,
-      lastCapture: null,
-    }
-  }
+const INTERVAL_OPEN_MS   = 1_000;   // 1fps quando expo aberta
+const INTERVAL_CLOSED_MS = 60_000;  // 1/min quando fechada
+const FREE_THRESHOLD_GB  = 100;     // circular buffer threshold
+const TZ                 = 'America/Sao_Paulo';
 
-  start() {
-    if (this._timer) return
+// ── Helpers de data/hora em BRT ─────────────────────────────────────────────
 
-    // Ensure base dir
-    try { fs.mkdirSync(BASE_DIR, { recursive: true }) } catch { /* ok */ }
+function brtDateStr(d = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(d);
+}
 
-    this._stats.started = new Date().toISOString()
-    console.log(`  📸 Timelapse capture started (every ${this.interval / 1000}s)`)
+function brtTimeStr(d = new Date()) {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: TZ, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  }).format(d).replace(/:/g, '');
+}
 
-    // First capture after 10s (let cameras initialize)
-    setTimeout(() => this._capture(), 10_000)
-    this._timer = setInterval(() => this._capture(), this.interval)
-  }
+function brtDayOfWeek(d = new Date()) {
+  return new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'short' }).format(d); // 'Mon', 'Tue', ...
+}
 
-  stop() {
-    if (this._timer) {
-      clearInterval(this._timer)
-      this._timer = null
-    }
-  }
+// ── Schedule: expo aberta? ───────────────────────────────────────────────────
 
-  async _capture() {
-    if (this._capturing) return  // skip if previous capture still running
-    this._capturing = true
+function isExpoOpen(schedule) {
+  if (!schedule || !schedule.enabled) return true; // sem schedule = sempre aberta
 
-    const now = new Date()
-    const dateStr = now.toISOString().slice(0, 10)  // YYYY-MM-DD
-    const timeStr = now.toTimeString().slice(0, 8).replace(/:/g, '')  // HHMMSS
+  const now     = new Date();
+  const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+  const tzDate  = new Date(now.toLocaleString('en-US', { timeZone: TZ }));
+  const dayKey  = dayNames[tzDate.getDay()];
+  const dayCfg  = (schedule.days || {})[dayKey];
 
-    const allCams = this.cameras.getAllStatus()
+  if (!dayCfg) return false; // fechado hoje
 
-    for (const camStatus of allCams) {
-      if (!camStatus.online) continue
+  const [oh, om] = (dayCfg.open  || schedule.powerOn  || '09:00').split(':').map(Number);
+  const [ch, cm] = (dayCfg.close || schedule.powerOff || '20:00').split(':').map(Number);
 
-      const cam = this.cameras.get(camStatus.id)
-      if (!cam) continue
+  const hhmm = tzDate.getHours() * 60 + tzDate.getMinutes();
+  return hhmm >= oh * 60 + om && hhmm < ch * 60 + cm;
+}
 
-      const camDir = path.join(BASE_DIR, dateStr, camStatus.id)
+// ── Circular buffer ──────────────────────────────────────────────────────────
 
-      try {
-        // Ensure directory
-        fs.mkdirSync(camDir, { recursive: true })
+async function freeGB() {
+  try {
+    const stat = await fs.promises.statfs(BASE_DIR.slice(0, 3));
+    return (stat.bfree * stat.bsize) / 1073741824;
+  } catch { return Infinity; }
+}
 
-        // Get snapshot (SD — lighter, sufficient for timelapse)
-        const buffer = await cam.getSnapshot(false)
-        if (!buffer || buffer.length < 1000) continue  // skip bad frames
-
-        const filePath = path.join(camDir, `${timeStr}.jpg`)
-        fs.writeFileSync(filePath, buffer)
-
-        this._stats.captures++
-        this._stats.lastCapture = now.toISOString()
-      } catch (err) {
-        this._stats.errors++
-        // Silent — don't spam logs for offline cameras
-      }
-    }
-
-    this._capturing = false
-  }
-
-  /** Get capture stats */
-  getStats() {
-    return { ...this._stats }
-  }
-
-  /**
-   * List available dates
-   * @returns {string[]} — ['2026-03-20', '2026-03-19', ...]
-   */
-  getDates() {
-    try {
-      return fs.readdirSync(BASE_DIR)
-        .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d))
-        .sort()
-        .reverse()
-    } catch {
-      return []
-    }
-  }
-
-  /**
-   * List frames for a camera on a date
-   * @param {string} date — 'YYYY-MM-DD'
-   * @param {string} camId — 'cam-1'
-   * @returns {{ time: string, file: string, path: string }[]}
-   */
-  getFrames(date, camId) {
-    const dir = path.join(BASE_DIR, date, camId)
-    try {
-      return fs.readdirSync(dir)
-        .filter(f => f.endsWith('.jpg'))
-        .sort()
-        .map(f => {
-          const t = f.replace('.jpg', '')
-          return {
-            time: `${t.slice(0, 2)}:${t.slice(2, 4)}:${t.slice(4, 6)}`,
-            file: f,
-            path: path.join(dir, f),
-          }
-        })
-    } catch {
-      return []
-    }
-  }
-
-  /**
-   * Get cameras available on a date
-   * @param {string} date — 'YYYY-MM-DD'
-   * @returns {string[]} — ['cam-1', 'cam-2', ...]
-   */
-  getCameras(date) {
-    const dir = path.join(BASE_DIR, date)
-    try {
-      return fs.readdirSync(dir)
-        .filter(d => d.startsWith('cam-'))
-        .sort()
-    } catch {
-      return []
-    }
-  }
-
-  /**
-   * Get a specific frame as buffer
-   * @param {string} date
-   * @param {string} camId
-   * @param {string} filename — 'HHMMSS.jpg'
-   * @returns {Buffer|null}
-   */
-  getFrame(date, camId, filename) {
-    // Sanitize inputs to prevent path traversal
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null
-    if (!/^cam-\d+$/.test(camId)) return null
-    if (!/^\d{6}\.jpg$/.test(filename)) return null
-
-    const filePath = path.join(BASE_DIR, date, camId, filename)
-    try {
-      return fs.readFileSync(filePath)
-    } catch {
-      return null
-    }
-  }
-
-  /**
-   * Get frame closest to a given time
-   * @param {string} date
-   * @param {string} camId
-   * @param {string} time — 'HH:MM:SS' or 'HHMMSS'
-   * @returns {{ time: string, file: string, path: string } | null}
-   */
-  getFrameAt(date, camId, time) {
-    const target = time.replace(/:/g, '')
-    const frames = this.getFrames(date, camId)
-    if (frames.length === 0) return null
-
-    // Binary-ish search for closest frame
-    let closest = frames[0]
-    let minDiff = Infinity
-    for (const f of frames) {
-      const ft = f.file.replace('.jpg', '')
-      const diff = Math.abs(parseInt(ft) - parseInt(target))
-      if (diff < minDiff) {
-        minDiff = diff
-        closest = f
-      }
-    }
-    return closest
-  }
-
-  /** Storage stats */
-  getStorageStats() {
-    const dates = this.getDates()
-    let totalFiles = 0
-    let totalBytes = 0
-
-    for (const date of dates.slice(0, 7)) {  // last 7 days only
-      const cams = this.getCameras(date)
-      for (const cam of cams) {
-        const frames = this.getFrames(date, cam)
-        totalFiles += frames.length
-        // Estimate bytes from first frame
-        if (frames.length > 0) {
-          try {
-            const stat = fs.statSync(frames[0].path)
-            totalBytes += stat.size * frames.length  // estimate
-          } catch { /* ok */ }
-        }
-      }
-    }
-
-    return {
-      dates: dates.length,
-      files7d: totalFiles,
-      estimatedMB7d: Math.round(totalBytes / 1024 / 1024),
-      estimatedMBPerDay: dates.length > 0 ? Math.round(totalBytes / Math.min(dates.length, 7) / 1024 / 1024) : 0,
-    }
+function deleteOldestDay() {
+  try {
+    const days = fs.readdirSync(BASE_DIR)
+      .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+    if (!days.length) return null;
+    const oldest = path.join(BASE_DIR, days[0]);
+    fs.rmSync(oldest, { recursive: true, force: true });
+    console.log(`[Timelapse] Circular buffer: removido ${days[0]} (D: < ${FREE_THRESHOLD_GB}GB)`);
+    return days[0];
+  } catch (e) {
+    console.error('[Timelapse] Erro ao remover dia antigo:', e.message);
+    return null;
   }
 }
 
-module.exports = { TimelapseCapture }
+// ── Classe principal ─────────────────────────────────────────────────────────
+
+class TimelapseCapture {
+  /**
+   * @param {object} cameras   — CameraManager
+   * @param {object} [opts]
+   * @param {object} [opts.schedule] — schedule do config (beleza-astral.json)
+   */
+  constructor(cameras, opts = {}) {
+    this.cameras   = cameras;
+    this.schedule  = opts.schedule || null;
+    this._timer    = null;
+    this._capturing = false;
+    this._stats    = { started: null, captures: 0, errors: 0, lastCapture: null, mode: 'init' };
+    this._lastPickupLog = null;
+  }
+
+  start() {
+    if (this._timer) return;
+    try { fs.mkdirSync(BASE_DIR, { recursive: true }); } catch {}
+    this._stats.started = new Date().toISOString();
+    console.log('[Timelapse] Iniciado — modo adaptativo (1fps aberta / 1/min fechada)');
+    setTimeout(() => this._tick(), 10_000); // primeira captura após 10s
+  }
+
+  stop() {
+    if (this._timer) { clearTimeout(this._timer); this._timer = null; }
+  }
+
+  getStats() { return { ...this._stats }; }
+
+  async _tick() {
+    const open = isExpoOpen(this.schedule);
+    const nextMs = open ? INTERVAL_OPEN_MS : INTERVAL_CLOSED_MS;
+    this._stats.mode = open ? 'open-1fps' : 'closed-1min';
+
+    await this._capture(open);
+
+    this._timer = setTimeout(() => this._tick(), nextMs);
+  }
+
+  async _capture(isOpen) {
+    if (this._capturing) return;
+    this._capturing = true;
+
+    try {
+      // Circular buffer — verificar espaço apenas a cada 100 capturas (open) ou sempre (closed)
+      if (!isOpen || this._stats.captures % 100 === 0) {
+        const free = await freeGB();
+        if (free < FREE_THRESHOLD_GB) await deleteOldestDay();
+      }
+
+      const now     = new Date();
+      const dateStr = brtDateStr(now);
+      const timeStr = brtTimeStr(now);
+
+      const allCams = this.cameras.getAllStatus();
+
+      for (const camStatus of allCams) {
+        if (!camStatus.online) continue;
+        const cam = this.cameras.get(camStatus.id);
+        if (!cam) continue;
+
+        const camDir = path.join(BASE_DIR, dateStr, camStatus.id);
+        try {
+          fs.mkdirSync(camDir, { recursive: true });
+          const buffer = await cam.getSnapshot(false);
+          if (!buffer || buffer.length < 1000) continue;
+          fs.writeFileSync(path.join(camDir, `${timeStr}.jpg`), buffer);
+          this._stats.captures++;
+          this._stats.lastCapture = now.toISOString();
+        } catch {
+          this._stats.errors++;
+        }
+      }
+
+      // Segunda-feira: lembrete pickup Leonardo
+      this._maybeLogPickup(now, dateStr);
+
+    } catch (e) {
+      console.error('[Timelapse] Erro inesperado:', e.message);
+    }
+
+    this._capturing = false;
+  }
+
+  _maybeLogPickup(now, dateStr) {
+    if (brtDayOfWeek(now) !== 'Mon') return;
+    if (this._lastPickupLog === dateStr) return;
+    this._lastPickupLog = dateStr;
+    try {
+      const days = fs.readdirSync(BASE_DIR)
+        .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+      console.log(
+        `[Timelapse] PICKUP SEGUNDA — ${days.length} dias (${days[0]} → ${days[days.length - 1]}). ` +
+        `Leonardo: copiar D:\\aya-expo-data\\timelapse\\ para HD externo → 4090 AYA Studio.`
+      );
+    } catch {}
+  }
+
+  // ── API de consulta (mantida intacta) ──────────────────────────────────────
+
+  getDates() {
+    try {
+      return fs.readdirSync(BASE_DIR)
+        .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort().reverse();
+    } catch { return []; }
+  }
+
+  getFrames(date, camId) {
+    const dir = path.join(BASE_DIR, date, camId);
+    try {
+      return fs.readdirSync(dir).filter(f => f.endsWith('.jpg')).sort().map(f => ({
+        time: `${f.slice(0,2)}:${f.slice(2,4)}:${f.slice(4,6)}`,
+        file: f,
+        path: path.join(dir, f),
+      }));
+    } catch { return []; }
+  }
+
+  getCameras(date) {
+    try {
+      return fs.readdirSync(path.join(BASE_DIR, date))
+        .filter(d => d.startsWith('cam-')).sort();
+    } catch { return []; }
+  }
+
+  getFrame(date, camId, filename) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+    if (!/^cam-\d+$/.test(camId)) return null;
+    if (!/^\d{6}\.jpg$/.test(filename)) return null;
+    try { return fs.readFileSync(path.join(BASE_DIR, date, camId, filename)); } catch { return null; }
+  }
+
+  getFrameAt(date, camId, time) {
+    const target = time.replace(/:/g, '');
+    const frames = this.getFrames(date, camId);
+    if (!frames.length) return null;
+    return frames.reduce((best, f) => {
+      const diff = Math.abs(parseInt(f.file) - parseInt(target));
+      const bestDiff = Math.abs(parseInt(best.file) - parseInt(target));
+      return diff < bestDiff ? f : best;
+    });
+  }
+
+  getStorageStats() {
+    const dates = this.getDates();
+    let totalFiles = 0, totalBytes = 0;
+    for (const date of dates.slice(0, 7)) {
+      for (const cam of this.getCameras(date)) {
+        const frames = this.getFrames(date, cam);
+        totalFiles += frames.length;
+        if (frames.length > 0) {
+          try { totalBytes += fs.statSync(frames[0].path).size * frames.length; } catch {}
+        }
+      }
+    }
+    return {
+      dates: dates.length,
+      files7d: totalFiles,
+      estimatedMB7d: Math.round(totalBytes / 1048576),
+      estimatedMBPerDay: dates.length > 0 ? Math.round(totalBytes / Math.min(dates.length, 7) / 1048576) : 0,
+      mode: this._stats.mode,
+    };
+  }
+}
+
+module.exports = { TimelapseCapture };

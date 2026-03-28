@@ -1,0 +1,3 @@
+MEDIA: C:aya-expo-tools\media
+LOOPS: C:aya-expo-tools\media\loops
+  loops dir missing

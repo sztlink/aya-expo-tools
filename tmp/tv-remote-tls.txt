@@ -1,0 +1,2 @@
+TLS connected to 6466
+ERR: 6C150000:error:0A00045C:SSL routines:ssl3_read_bytes:tlsv13 alert certificate required:c:\ws\deps\openssl\openssl\ssl\record\rec_layer_s3.c:1605:SSL alert number 116

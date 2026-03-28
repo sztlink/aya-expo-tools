@@ -1,0 +1,403 @@
+{
+  "date": "2026-03-24",
+  "samples": 1368,
+  "firstSample": "2026-03-24T00:00:42.901Z",
+  "lastSample": "2026-03-24T23:59:28.433Z",
+  "counter": {
+    "entries": 212,
+    "exits": 187,
+    "occupancy": 25
+  },
+  "counterHourly": {
+    "10": {
+      "entries": 14,
+      "exits": 14
+    },
+    "11": {
+      "entries": 11,
+      "exits": 10
+    },
+    "12": {
+      "entries": 10,
+      "exits": 8
+    },
+    "13": {
+      "entries": 12,
+      "exits": 12
+    },
+    "14": {
+      "entries": 27,
+      "exits": 27
+    },
+    "15": {
+      "entries": 2,
+      "exits": 2
+    },
+    "16": {
+      "entries": 3,
+      "exits": 1
+    },
+    "17": {
+      "entries": 0,
+      "exits": 0
+    },
+    "18": {
+      "entries": 0,
+      "exits": 0
+    },
+    "19": {
+      "entries": 0,
+      "exits": 1
+    },
+    "20": {
+      "entries": 0,
+      "exits": 0
+    },
+    "00": {
+      "entries": 0,
+      "exits": 0
+    },
+    "01": {
+      "entries": 0,
+      "exits": 0
+    },
+    "02": {
+      "entries": 0,
+      "exits": 0
+    },
+    "03": {
+      "entries": 0,
+      "exits": 0
+    },
+    "04": {
+      "entries": 0,
+      "exits": 0
+    },
+    "05": {
+      "entries": 1,
+      "exits": 0
+    },
+    "06": {
+      "entries": 0,
+      "exits": 0
+    },
+    "07": {
+      "entries": 0,
+      "exits": 0
+    },
+    "08": {
+      "entries": 0,
+      "exits": 0
+    },
+    "09": {
+      "entries": 8,
+      "exits": 5
+    }
+  },
+  "peak": {
+    "count": 5,
+    "time": "2026-03-24T14:29:34.348Z"
+  },
+  "zones": {
+    "sala-imersiva": {
+      "max": 2,
+      "avg": 0,
+      "minutesOccupied": 36,
+      "minutesTotal": 1368,
+      "occupancyRate": 2.6
+    },
+    "galeria": {
+      "max": 3,
+      "avg": 0.1,
+      "minutesOccupied": 99,
+      "minutesTotal": 1368,
+      "occupancyRate": 7.2
+    },
+    "corredor": {
+      "max": 3,
+      "avg": 0.2,
+      "minutesOccupied": 211,
+      "minutesTotal": 1368,
+      "occupancyRate": 15.4
+    },
+    "entrada": {
+      "max": 3,
+      "avg": 0.2,
+      "minutesOccupied": 212,
+      "minutesTotal": 1368,
+      "occupancyRate": 15.5
+    }
+  },
+  "dwell": {
+    "sala-imersiva": {
+      "samples": 32,
+      "avgSeconds": 13,
+      "avgFormatted": "13s",
+      "maxSeconds": 80,
+      "activeVisitors": 0
+    },
+    "galeria": {
+      "samples": 2,
+      "avgSeconds": 12,
+      "avgFormatted": "12s",
+      "maxSeconds": 13,
+      "activeVisitors": 0
+    },
+    "corredor": {
+      "samples": 10,
+      "avgSeconds": 71,
+      "avgFormatted": "1m11s",
+      "maxSeconds": 213,
+      "activeVisitors": 0
+    },
+    "entrada": {
+      "samples": 5,
+      "avgSeconds": 100,
+      "avgFormatted": "1m40s",
+      "maxSeconds": 359,
+      "activeVisitors": 0
+    }
+  },
+  "hourly": {
+    "10": {
+      "samples": 60,
+      "zones": {
+        "sala-imersiva": 0,
+        "galeria": 0,
+        "corredor": 0,
+        "entrada": 0
+      },
+      "avgTotal": 0
+    },
+    "11": {
+      "samples": 60,
+      "zones": {
+        "sala-imersiva": 0,
+        "galeria": 0,
+        "corredor": 0,
+        "entrada": 0
+      },
+      "avgTotal": 0
+    },
+    "12": {
+      "samples": 60,
+      "zones": {
+        "sala-imersiva": 0,
+        "galeria": 0.1,
+        "corredor": 0.1,
+        "entrada": 0.3
+      },
+      "avgTotal": 0.5
+    },
+    "13": {
+      "samples": 60,
+      "zones": {
+        "sala-imersiva": 0,
+        "galeria": 0.2,
+        "corredor": 1.6,
+        "entrada": 1.1
+      },
+      "avgTotal": 2.9
+    },
+    "14": {
+      "samples": 60,
+      "zones": {
+        "sala-imersiva": 0,
+        "galeria": 0.3,
+        "corredor": 1.5,
+        "entrada": 0.9
+      },
+      "avgTotal": 2.8
+    },
+    "15": {
+      "samples": 60,
+      "zones": {
+        "sala-imersiva": 0.1,
+        "galeria": 0.3,
+        "corredor": 0.8,
+        "entrada": 0.6
+      },
+      "avgTotal": 1.7
+    },
+    "16": {
+      "samples": 60,
+      "zones": {
+        "sala-imersiva": 0,
+        "galeria": 0.5,
+        "corredor": 0.8,
+        "entrada": 0.3
+      },
+      "avgTotal": 1.6
+    },
+    "17": {
+      "samples": 33,
+      "zones": {
+        "sala-imersiva": 0.1,
+        "galeria": 0.2,
+        "corredor": 0.6,
+        "entrada": 1.2
+      },
+      "avgTotal": 2.2
+    },
+    "18": {
+      "samples": 18,
+      "zones": {
+        "sala-imersiva": 0.1,
+        "galeria": 0.2,
+        "corredor": 0.1,
+        "entrada": 0.1
+      },
+      "avgTotal": 0.3
+    },
+    "19": {
+      "samples": 59,
+      "zones": {
+        "sala-imersiva": 0.1,
+        "galeria": 0.1,
+        "corredor": 0.2,
+        "entrada": 0.2
+      },
+      "avgTotal": 0.5
+    },
+    "20": {
+      "samples": 60,
+      "zones": {
+        "sala-imersiva": 0.1,
+        "galeria": 0,
+        "corredor": 0,
+        "entrada": 0
+      },
+      "avgTotal": 0.1
+    },
+    "21": {
+      "samples": 60,
+      "zones": {
+        "sala-imersiva": 0,
+        "galeria": 0,
+        "corredor": 0,
+        "entrada": 0
+      },
+      "avgTotal": 0
+    },
+    "22": {
+      "samples": 60,
+      "zones": {
+        "sala-imersiva": 0,
+        "galeria": 0,
+        "corredor": 0,
+        "entrada": 0
+      },
+      "avgTotal": 0
+    },
+    "23": {
+      "samples": 60,
+      "zones": {
+        "sala-imersiva": 0,
+        "galeria": 0,
+        "corredor": 0,
+        "entrada": 0
+      },
+      "avgTotal": 0
+    },
+    "00": {
+      "samples": 59,
+      "zones": {
+        "sala-imersiva": 0,
+        "galeria": 0,
+        "corredor": 0,
+        "entrada": 0.1
+      },
+      "avgTotal": 0.1
+    },
+    "01": {
+      "samples": 59,
+      "zones": {
+        "sala-imersiva": 0,
+        "galeria": 0,
+        "corredor": 0,
+        "entrada": 0.1
+      },
+      "avgTotal": 0.1
+    },
+    "02": {
+      "samples": 60,
+      "zones": {
+        "sala-imersiva": 0.1,
+        "galeria": 0,
+        "corredor": 0,
+        "entrada": 0.1
+      },
+      "avgTotal": 0.1
+    },
+    "03": {
+      "samples": 60,
+      "zones": {
+        "sala-imersiva": 0.1,
+        "galeria": 0.1,
+        "corredor": 0,
+        "entrada": 0
+      },
+      "avgTotal": 0.1
+    },
+    "04": {
+      "samples": 60,
+      "zones": {
+        "sala-imersiva": 0.1,
+        "galeria": 0,
+        "corredor": 0,
+        "entrada": 0
+      },
+      "avgTotal": 0.1
+    },
+    "05": {
+      "samples": 60,
+      "zones": {
+        "sala-imersiva": 0,
+        "galeria": 0,
+        "corredor": 0,
+        "entrada": 0
+      },
+      "avgTotal": 0.1
+    },
+    "06": {
+      "samples": 60,
+      "zones": {
+        "sala-imersiva": 0,
+        "galeria": 0,
+        "corredor": 0,
+        "entrada": 0
+      },
+      "avgTotal": 0
+    },
+    "07": {
+      "samples": 60,
+      "zones": {
+        "sala-imersiva": 0,
+        "galeria": 0,
+        "corredor": 0,
+        "entrada": 0.1
+      },
+      "avgTotal": 0.1
+    },
+    "08": {
+      "samples": 60,
+      "zones": {
+        "sala-imersiva": 0.1,
+        "galeria": 0,
+        "corredor": 0,
+        "entrada": 0
+      },
+      "avgTotal": 0.1
+    },
+    "09": {
+      "samples": 60,
+      "zones": {
+        "sala-imersiva": 0,
+        "galeria": 0,
+        "corredor": 0,
+        "entrada": 0.1
+      },
+      "avgTotal": 0.1
+    }
+  }
+}

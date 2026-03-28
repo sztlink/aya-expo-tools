@@ -1,14 +1,14 @@
 """
-AYA Expo Tools — Visitor Counter (Line Crossing)
+AYA Expo Tools – Visitor Counter (Line Crossing)
 
 Counts people entering/exiting by tracking them across a virtual line.
 Uses YOLO + ByteTrack for detection + tracking.
 
 Output:
-    cv/output/counter/count.json    — running totals (entries, exits, current occupancy)
-    cv/output/counter/frame.jpg     — annotated frame with line + tracks
-    cv/output/counter/hourly.json   — hourly breakdown
-    cv/output/counter/status.json   — process status
+    cv/output/counter/count.json    – running totals (entries, exits, current occupancy)
+    cv/output/counter/frame.jpg     – annotated frame with line + tracks
+    cv/output/counter/hourly.json   – hourly breakdown
+    cv/output/counter/status.json   – process status
 
 Usage:
     python counter.py --config ../config/beleza-astral.json
@@ -47,6 +47,37 @@ signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
 
+def is_expo_open(schedule, tz_name="America/Sao_Paulo"):
+    """Returns True if the expo is currently open per schedule config."""
+    if not schedule or not schedule.get("enabled", False):
+        return True  # no schedule = always open
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:
+        from backports.zoneinfo import ZoneInfo
+    
+    tz = ZoneInfo(tz_name)
+    now = datetime.now(tz)
+    day_map = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+    day_key = day_map[now.weekday()]
+    days = schedule.get("days", {})
+    day_cfg = days.get(day_key)
+    
+    if day_cfg is None:
+        return False  # closed today (e.g. Monday = null)
+    
+    open_str = day_cfg.get("open", schedule.get("powerOn", "09:00"))
+    close_str = day_cfg.get("close", schedule.get("powerOff", "20:00"))
+    
+    open_h, open_m = map(int, open_str.split(":"))
+    close_h, close_m = map(int, close_str.split(":"))
+    
+    open_time = now.replace(hour=open_h, minute=open_m, second=0, microsecond=0)
+    close_time = now.replace(hour=close_h, minute=close_m, second=0, microsecond=0)
+    
+    return open_time <= now < close_time
+
+
 def write_json(filepath, data):
     tmp = str(filepath) + ".tmp"
     with open(tmp, 'w') as f:
@@ -72,17 +103,20 @@ class LineCrossingCounter:
     - Object moves from below to above = EXIT (out of the exhibition)
     """
 
-    def __init__(self, line_start, line_end):
+    def __init__(self, line_start, line_end, schedule=None, tz_name="America/Sao_Paulo"):
         self.line_start = line_start  # (x1, y1)
         self.line_end = line_end      # (x2, y2)
         self.entries = 0
         self.exits = 0
         self.prev_positions = {}  # track_id -> "above" | "below"
+        self.schedule = schedule
+        self.tz_name = tz_name
         
         # Dwell time tracking
         self.entry_times = {}      # track_id -> datetime of entry
         self.dwell_times = []      # list of completed dwell times in seconds
         self.active_visitors = {}  # track_id -> { entered_at, last_seen }
+        self.last_crossed_time = {}  # track_id -> (datetime, direction) — debounce 30s
         
         # Hourly tracking
         self.hourly = {}  # "HH" -> { entries, exits, avg_dwell }
@@ -103,6 +137,9 @@ class LineCrossingCounter:
         tracks: list of { id, cx, cy } (centroid of each tracked person)
         Returns: (entries_this_frame, exits_this_frame)
         """
+        # Only count during open hours
+        expo_open = is_expo_open(self.schedule, self.tz_name)
+        
         new_entries = 0
         new_exits = 0
         current_ids = set()
@@ -112,8 +149,6 @@ class LineCrossingCounter:
         today = datetime.now().strftime("%Y-%m-%d")
         if today != self.day_start:
             self.hourly = {}
-            self.day_start = today
-            # Don't reset total entries/exits — those accumulate per session
 
         if hour not in self.hourly:
             self.hourly[hour] = {"entries": 0, "exits": 0}
@@ -130,20 +165,27 @@ class LineCrossingCounter:
             if tid in self.prev_positions:
                 prev_side = self.prev_positions[tid]
                 if prev_side == "above" and side == "below":
-                    # ENTRY — person crossed into exhibition
-                    self.entries += 1
-                    new_entries += 1
-                    self.hourly[hour]["entries"] += 1
+                    # ENTRY – person crossed into exhibition
+                    # Debounce: ignore if same tracker crossed as entry < 30s ago
+                    last = self.last_crossed_time.get(tid)
+                    debounce_ok = not last or last[1] != "entry" or (now - last[0]).total_seconds() > 30
+                    if expo_open and debounce_ok:
+                        self.entries += 1
+                        new_entries += 1
+                        self.hourly[hour]["entries"] += 1
+                    self.last_crossed_time[tid] = (now, "entry")
                     self.entry_times[tid] = now
                     self.active_visitors[tid] = {
                         "entered_at": now.isoformat(),
                         "last_seen": now.isoformat(),
                     }
                 elif prev_side == "below" and side == "above":
-                    # EXIT — person crossed out of exhibition
-                    self.exits += 1
-                    new_exits += 1
-                    self.hourly[hour]["exits"] += 1
+                    # EXIT – person crossed out of exhibition
+                    if expo_open:
+                        self.exits += 1
+                        new_exits += 1
+                        self.hourly[hour]["exits"] += 1
+                    self.last_crossed_time[tid] = (now, "exit")
                     # Calculate dwell time
                     if tid in self.entry_times:
                         dwell = (now - self.entry_times[tid]).total_seconds()
@@ -171,6 +213,10 @@ class LineCrossingCounter:
                 del self.entry_times[tid]
             if tid in self.active_visitors:
                 del self.active_visitors[tid]
+            # Keep last_crossed_time for 60s after disappearing (debounce window)
+            if tid in self.last_crossed_time:
+                if (now - self.last_crossed_time[tid][0]).total_seconds() > 60:
+                    del self.last_crossed_time[tid]
 
         return new_entries, new_exits
 
@@ -242,7 +288,7 @@ def draw_frame(frame, line_start, line_end, tracks, counter):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="AYA Expo Tools — Visitor Counter")
+    parser = argparse.ArgumentParser(description="AYA Expo Tools – Visitor Counter")
     parser.add_argument("--config", help="Path to expo config JSON")
     parser.add_argument("--rtsp", help="RTSP URL")
     parser.add_argument("--gpu", type=int, default=1)
@@ -254,6 +300,9 @@ def main():
 
     # Load RTSP from config if not provided directly
     rtsp_url = args.rtsp
+    schedule_cfg = {}
+    tz_name = "America/Sao_Paulo"
+    
     if not rtsp_url and args.config:
         try:
             with open(args.config, encoding='utf-8') as f:
@@ -269,6 +318,9 @@ def main():
             line_cfg = counter_cfg.get("line", cv_config.get("counterLine"))
             if line_cfg:
                 args.line = line_cfg
+            # Schedule from config
+            schedule_cfg = config.get("schedule", {})
+            tz_name = schedule_cfg.get("timezone", "America/Sao_Paulo")
         except Exception as e:
             print(f"[Counter] Config error: {e}")
 
@@ -312,11 +364,38 @@ def main():
     print("[Counter] Stream connected. Counting...")
     write_status("running")
 
-    counter = LineCrossingCounter(line_start, line_end)
+    counter = LineCrossingCounter(line_start, line_end, schedule=schedule_cfg, tz_name=tz_name)
     frame_count = 0
 
-    # Restore today's counts from previous session (survives restarts)
-    if COUNT_FILE.exists():
+    # Fresh-start marker: escrito pelo servidor (cv.js) em todo restart intencional.
+    # Se presente → deletar e começar do zero (evita restaurar dados de montagem ou sessão errada).
+    # Se ausente → restaurar (crash recovery: counter.py caiu mas servidor ainda rodava).
+    fresh_start_file = OUTPUT_DIR / "fresh-start"
+    preserved_file   = OUTPUT_DIR / "count-preserved.json"
+    if fresh_start_file.exists():
+        fresh_start_file.unlink()
+        # Se existe preserved = restart mid-expo, restaurar estado
+        if preserved_file.exists():
+            try:
+                prev = json.loads(preserved_file.read_text())
+                prev_date = prev.get("date", "")
+                today = datetime.now().strftime("%Y-%m-%d")
+                if prev_date == today:
+                    counter.entries = prev.get("entries", 0)
+                    counter.exits = prev.get("exits", 0)
+                    counter.hourly = prev.get("hourly", {})
+                    counter.day_start = prev_date
+                    print(f"[Counter] Restored from preserved: {counter.entries} entries, {counter.exits} exits")
+                else:
+                    print(f"[Counter] Preserved data from {prev_date}, starting fresh for {today}")
+            except Exception as e:
+                print(f"[Counter] Could not restore preserved: {e}")
+            finally:
+                preserved_file.unlink(missing_ok=True)
+        else:
+            print("[Counter] Fresh start — ignorando estado anterior")
+    elif COUNT_FILE.exists():
+        # Restore today's counts from previous session (crash recovery)
         try:
             prev = json.loads(COUNT_FILE.read_text())
             prev_date = prev.get("date", "")
@@ -383,7 +462,7 @@ def main():
                 dwell_info = f" avg_stay={counter._format_duration(avg)}"
             print(f"[Counter] +{new_in} IN / +{new_out} OUT -> {counter.entries} in, {counter.exits} out, {counter.occupancy} now{dwell_info}")
 
-        # Daily reset at midnight — save yesterday's data and start fresh
+        # Daily reset at midnight – save yesterday's data and start fresh
         today = datetime.now().strftime("%Y-%m-%d")
         if today != counter.day_start:
             # Save yesterday's final counts
@@ -391,7 +470,7 @@ def main():
             write_json(yesterday_file, counter.get_counts())
             print(f"[Counter] Day ended: {counter.entries} entries, {counter.exits} exits, saved to {yesterday_file}")
             # Reset
-            counter = LineCrossingCounter(line_start, line_end)
+            counter = LineCrossingCounter(line_start, line_end, schedule=schedule_cfg, tz_name=tz_name)
             frame_count = 0
             print(f"[Counter] New day: {today} - counters reset")
 

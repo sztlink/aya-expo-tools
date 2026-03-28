@@ -1,0 +1,10 @@
+Connected
+SEND[0]: {"type":"Button","payload":{"name":"POWER","action":"single"}}
+ERR: F8210000:error:0A000416:SSL routines:ssl3_read_bytes:sslv3 alert certificate unknown:c:\ws\deps\openssl\openssl\ssl\record\rec_layer_s3.c:1605:SSL alert number 46
+
+SEND[1]: {"type":"remoteapp.input","payload":{"key_code":"POWER"}}
+SEND[2]: {"type":0,"uri":"ui.intent.action.KEY_POWER"}
+SEND[3]: {"type":"sendkey","keyname":"POWER"}
+SEND[4]: {"request":"button","body":{"button":"power"}}
+SEND[5]: {"action":"sendkey","keycode":"KEY_POWER"}
+SEND[6]: {"type":"STANDBY"}

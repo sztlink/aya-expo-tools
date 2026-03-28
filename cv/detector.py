@@ -450,7 +450,10 @@ def main():
         # ─── Inferência YOLO ─────────────────────────────────────────────────
 
         try:
-            results = model.track(frame, persist=True, tracker="bytetrack.yaml", **predict_kwargs)
+            # Tracker customizado para galeria se existir
+            _gallery_tracker = os.path.join(os.path.dirname(__file__), 'bytetrack-gallery.yaml')
+            _tracker_cfg = _gallery_tracker if os.path.exists(_gallery_tracker) else 'bytetrack.yaml'
+            results = model.track(frame, persist=True, tracker=_tracker_cfg, **predict_kwargs)
         except Exception as e:
             print(f"[CV] Erro na inferência: {e}", file=sys.stderr, flush=True)
             time.sleep(1)
@@ -541,11 +544,14 @@ def main():
         # ─── Emite evento JSONL (protocolo primário — zero latência) ─────────
 
         now = datetime.now(timezone.utc).isoformat()
+        # Contagem filtrada: apenas detecções dentro de pelo menos 1 polígono
+        in_zone_count = sum(1 for d in detections if d.get("zones"))
+        
         emit({
             "event": "detection",
             "timestamp": now,
             "camera": settings["camera"],
-            "count": len(detections),
+            "count": in_zone_count if zones else len(detections),
             "fps": round(fps, 1),
             "resolution": resolution,
             "model": settings["model"],
@@ -564,7 +570,7 @@ def main():
             result_data = {
                 "timestamp": now,
                 "camera": settings["camera"],
-                "count": len(detections),
+                "count": in_zone_count if zones else len(detections),
                 "fps": round(fps, 1),
                 "resolution": resolution,
                 "model": settings["model"],
@@ -593,7 +599,7 @@ def main():
                             cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1)
 
             # Overlay: contagem total e por zona
-            cv2.putText(annotated, f"Pessoas: {len(detections)}",
+            cv2.putText(annotated, f"Pessoas: {in_zone_count if zones else len(detections)}",
                         (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
             cv2.putText(annotated, f"{fps:.1f} FPS | {model_format}",
                         (10, 58), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 200, 0), 1)

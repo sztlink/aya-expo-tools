@@ -21,6 +21,8 @@ const network = require('./network')
 const tv = require('./tv')
 const cvLogger = require('./cv-logger')
 const cvReport = require('./cv-report')
+let _audio = null
+try { _audio = require('./audio') } catch { /* audio opcional */ }
 
 // Carrega .env local (se existir) sem dependência de dotenv
 // Formato suportado: KEY=VALUE por linha, # para comentários
@@ -216,6 +218,12 @@ class PortalSync {
       }
     } catch { /* cv-logger not ready */ }
 
+    // ReID — visitantes unicos e dwell real
+    try {
+      const reidState = this.cvManager && this.cvManager.getReidState ? this.cvManager.getReidState() : null;
+      if (reidState && reidState.today) payload.reid = reidState.today;
+    } catch { /* reid not ready */ }
+
     // Weekly report (push 1x per hour — heavier payload)
     const now = Date.now()
     if (!this._lastReportPush || now - this._lastReportPush > 3600_000) {
@@ -228,18 +236,21 @@ class PortalSync {
       } catch { /* report not ready */ }
     }
 
-    // Heatmap: push 1x per hour (base64 PNG of first CV camera)
+    // Heatmap: push 1x por hora - todas as cameras
     if (!this._lastHeatmapPush || now - this._lastHeatmapPush > 3600_000) {
-      const cvCams = this.config.cv?.cameras || []
-      const camId = cvCams[0] || null
-      if (camId) {
-        const buffer = this.cvManager.getHeatmap(camId)
-        if (buffer) {
-          payload.heatmapBase64 = buffer.toString('base64')
-          payload.heatmapCamId = camId
-          payload.heatmapUpdatedAt = new Date().toISOString()
-          this._lastHeatmapPush = now
-        }
+      const cvCams = this.config.cv?.cameras || [];
+      const perCamera = {};
+      for (const cam of cvCams) {
+        const buf = this.cvManager.getHeatmap(cam);
+        if (buf) perCamera[cam] = buf.toString('base64');
+      }
+      if (Object.keys(perCamera).length > 0) {
+        payload.heatmapPerCamera = perCamera;
+        payload.heatmapUpdatedAt = new Date().toISOString();
+        const first = Object.keys(perCamera)[0];
+        payload.heatmapBase64 = perCamera[first];
+        payload.heatmapCamId  = first;
+        this._lastHeatmapPush = now;
       }
     }
 
@@ -285,6 +296,7 @@ class PortalSync {
       cv: this.cvManager ? this._buildCvPayload() : null,
       server: this.serverHealth ? this.serverHealth.getCurrent() : null,
       schedule: this.scheduler ? this.scheduler.getStatus() : null,
+      audio: _audio ? { level: _audio.getVolume(), muted: _audio.getVolume() === 0 } : null,
     }
 
     // Snapshots de TODAS as câmeras por push (otimização 4G: portal serve do cache)
@@ -295,7 +307,11 @@ class PortalSync {
         const cam = this.cameras.get(camStatus.id)
         if (!cam) return
         try {
-          const buffer = await cam.getSnapshot(false) // SD 640x480
+          // Usar frame.jpg do detector (16:9, mesmo frame do heatmap)
+          const framePath = path.join(__dirname, '..', 'cv', 'output', camStatus.id, 'frame.jpg');
+          const buffer = fs.existsSync(framePath)
+            ? fs.readFileSync(framePath)
+            : await cam.getSnapshot(false); // fallback SD 640x480
           snapshots[camStatus.id] = {
             data: buffer.toString('base64'),
             contentType: 'image/jpeg',

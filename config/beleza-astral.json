@@ -2,7 +2,8 @@
   "exhibition": {
     "name": "Beleza Astral",
     "venue": "Farol Santander",
-    "city": "SÃ£o Paulo",
+    "openingDate": "2026-03-26",
+    "city": "São Paulo",
     "type": "sala-imersiva",
     "slug": "beleza-astral",
     "projetoId": "cml9t9rrc0003peao6wux69rl",
@@ -17,7 +18,10 @@
         "user": "admin",
         "password": ""
       }
-    }
+    },
+    "publicName": "Samuel de Saboia — Introdução ao Infinito",
+    "artist": "Samuel de Saboia",
+    "floor": "22º andar"
   },
   "modules": {
     "projectors": true,
@@ -82,7 +86,7 @@
   "cameras": [
     {
       "id": "cam-1",
-      "name": "CÃ¢mera 1",
+      "name": "Câmera 1",
       "ip": "192.168.0.107",
       "mac": "80:85:44:6C:68:C6",
       "model": "Intelbras iMD 3C Black",
@@ -92,7 +96,7 @@
     },
     {
       "id": "cam-2",
-      "name": "CÃ¢mera 2",
+      "name": "Câmera 2",
       "ip": "192.168.0.108",
       "mac": "98:2A:0A:82:0A:C5",
       "model": "Intelbras iMD 3C Black",
@@ -101,7 +105,7 @@
     },
     {
       "id": "cam-3",
-      "name": "CÃ¢mera 3",
+      "name": "Câmera 3",
       "ip": "192.168.0.181",
       "mac": "98:2A:0A:82:0A:8B",
       "model": "Intelbras iMD 3C Black",
@@ -110,7 +114,7 @@
     },
     {
       "id": "cam-4",
-      "name": "CÃ¢mera 4",
+      "name": "Câmera 4",
       "ip": "192.168.0.200",
       "mac": "98:2A:0A:82:0A:9E",
       "model": "Intelbras iMD 3C Black",
@@ -122,7 +126,7 @@
   "audio": {
     "type": "analog",
     "interface": "",
-    "notes": "3x JBL soundbar + subwoofer â€” saÃ­da analÃ³gica direto do servidor",
+    "notes": "3x JBL soundbar + subwoofer — saída analógica direto do servidor",
     "zones": [
       {
         "id": "audio-1",
@@ -143,88 +147,68 @@
   },
   "smartplugs": [
     {
-      "id": "plug-1",
-      "name": "Smart Plug 1",
-      "ip": "192.168.0.40",
-      "model": "NovaDigital",
-      "controls": "Projetores 1â€“2"
+      "id": "plug-tv1",
+      "name": "Smart Plug TV-1",
+      "ip": "192.168.0.184",
+      "model": "AVATTO WiFi Smart Socket Brazil 16A",
+      "controls": "TV-1",
+      "deviceId": "eb7a4ea2c370d73f91ymo5",
+      "productKey": "keyjup78v54myhan",
+      "protocol": "tuya",
+      "version": "3.4"
     },
     {
-      "id": "plug-2",
-      "name": "Smart Plug 2",
-      "ip": "192.168.0.41",
-      "model": "NovaDigital",
-      "controls": "Projetores 3â€“4"
-    },
-    {
-      "id": "plug-3",
-      "name": "Smart Plug 3",
-      "ip": "192.168.0.42",
-      "model": "NovaDigital",
-      "controls": "Projetores 5â€“6"
-    },
-    {
-      "id": "plug-4",
-      "name": "Smart Plug 4",
-      "ip": "192.168.0.43",
-      "model": "NovaDigital",
-      "controls": "Ãudio"
-    },
-    {
-      "id": "plug-5",
-      "name": "Smart Plug 5",
-      "ip": "192.168.0.44",
-      "model": "NovaDigital",
-      "controls": ""
-    },
-    {
-      "id": "plug-6",
-      "name": "Smart Plug 6",
-      "ip": "192.168.0.45",
-      "model": "NovaDigital",
-      "controls": ""
+      "id": "plug-tv2",
+      "name": "Smart Plug TV-2",
+      "ip": "192.168.0.126",
+      "model": "AVATTO WiFi Smart Socket Brazil 16A",
+      "controls": "TV-2",
+      "deviceId": "eb9a38f4fa639284bcemvo",
+      "productKey": "keyjup78v54myhan",
+      "protocol": "tuya",
+      "version": "3.4"
     }
   ],
   "tvs": [
     {
       "id": "tv-1",
       "name": "TV 1",
-      "ip": "192.168.0.115",
-      "mac": "E0:3E:CB:E2:60:4C",
+      "ip": "192.168.0.202",
+      "mac": "C4:08:26:9A:E7:EB",
       "model": "Hisense 55A51HUA",
       "zone": "",
       "broadcastAddr": "192.168.0.255",
       "protocol": "cast",
-      "videoUrl": "/loops/Samuel_1080p_entrevista-loop.mp4",
-      "videoUrlOriginal": "/media/Samuel_1080p_entrevista.mp4",
+      "videoUrl": "/loops/Samuel_4K_entrevista_h264-loop.mp4",
+      "videoUrlOriginal": "/media/Samuel_4K_entrevista_h264.mp4",
       "videoTitle": "Beleza Astral TV1"
     },
     {
       "id": "tv-2",
       "name": "TV 2",
-      "ip": "192.168.0.210",
-      "mac": "E0:3E:CB:E2:61:56",
+      "ip": "192.168.0.201",
+      "mac": "C4:08:26:9A:E8:88",
       "model": "Hisense 55A51HUA",
       "zone": "",
       "broadcastAddr": "192.168.0.255",
       "protocol": "cast",
-      "videoUrl": "/loops/Samuel__1080p_estudio-loop.mp4",
-      "videoUrlOriginal": "/media/Samuel__1080p_estudio.mp4",
+      "videoUrl": "/loops/Samuel_4K_estudio.mp4-loop.mp4",
+      "videoUrlOriginal": "/media/Samuel_4K_estudio.mp4.mp4",
       "videoTitle": "Beleza Astral TV2"
     }
   ],
   "space": {
     "planta": "/files/planta-samuel-de-saboia-dark.png",
     "plantaPdf": "/files/planta-expografia-R02.pdf",
-    "plantaVersao": "R02 â€” Janeiro 2026 (BrÃ­gida Garrido)",
-    "notas": "ExposiÃ§Ã£o Samuel de Saboia â€” IntroduÃ§Ã£o ao Infinito. 22Âº andar do Farol Santander SP.\nZonas: Entrada Â· Obras Â· Sala Imersiva Â· Sala TÃ©cnica Â· VÃ­deo 1 Â· VÃ­deo 2.\nR02 aprovada para orÃ§amento de cenografia (13/01/2026).",
-    "andares": "22Âº andar"
+    "plantaVersao": "R02 — Janeiro 2026 (Brígida Garrido)",
+    "notas": "Exposição Samuel de Saboia — Introdução ao Infinito. 22º andar do Farol Santander SP.",
+    "andares": "22º andar"
   },
   "resolume": {
     "process": "Arena.exe",
     "pixelmap": "",
     "contentStatus": "pixelmap",
-    "notes": "Mapeado com pixelmap JPG/PNG â€” Samuel de Saboia"
+    "notes": "Mapeado com pixelmap JPG/PNG — Samuel de Saboia"
   },
   "remoteAccess": {
     "rustdesk": {
@@ -244,35 +228,36 @@
   "schedule": {
     "enabled": true,
     "timezone": "America/Sao_Paulo",
-    "powerOn": "09:00",
-    "powerOff": "20:00",
+    "powerOn": "08:30",
+    "powerOff": "20:30",
     "days": {
       "mon": null,
       "tue": {
-        "open": "09:00",
-        "close": "20:00"
+        "open": "08:30",
+        "close": "20:30"
       },
       "wed": {
-        "open": "09:00",
-        "close": "20:00"
+        "open": "08:30",
+        "close": "20:30"
       },
       "thu": {
-        "open": "09:00",
-        "close": "20:00"
+        "open": "08:30",
+        "close": "20:30"
       },
       "fri": {
-        "open": "09:00",
-        "close": "20:00"
+        "open": "08:30",
+        "close": "20:30"
       },
       "sat": {
-        "open": "09:00",
+        "open": "08:30",
         "close": "20:00"
       },
       "sun": {
-        "open": "09:00",
-        "close": "20:00"
+        "open": "08:30",
+        "close": "20:30"
       }
-    }
+    },
+    "audioVolume": 30
   },
   "cv": {
     "enabled": true,
@@ -284,12 +269,12 @@
     ],
     "gpu": 1,
     "model": "yolov8m",
-    "interval": 1,
+    "interval": 0.33,
     "confidence": 0.3,
     "heatmapDecay": 0.999,
     "imgsz": 960,
     "countStrategy": "max",
-    "_comment_zones": "cameras Ã© um dict: {cam_id: 'full' | [[x,y],...]}. strategy: 'max' para cÃ¢meras no mesmo espaÃ§o fÃ­sico (evita dupla contagem), 'sum' para espaÃ§os distintos sem sobreposiÃ§Ã£o.",
+    "_comment_zones": "cameras ???Y?????????'????????????????T???Y??????????s?????????'?????????????????? um dict: {cam_id: 'full' | [[x,y],...]}. strategy: 'max' para c???Y?????????'????????????????T???Y??????????s?????????'??????????????????meras no mesmo espa???Y?????????'????????????????T???Y??????????s?????????'??????????????????o f???Y?????????'????????????????T???Y??????????s?????????'??????????????????sico (evita dupla contagem), 'sum' para espa???Y?????????'????????????????T???Y??????????s?????????'??????????????????os distintos sem sobreposi???Y?????????'????????????????T???Y??????????s?????????'?????????????????????Y?????????'????????????????T???Y??????????s?????????'??????????????????o.",
     "zones": [
       {
         "id": "sala-imersiva",
@@ -466,8 +451,8 @@
         "alert": {}
       },
       {
-        "id": "entrada",
-        "name": "Entrada",
+        "id": "galeria-principal",
+        "name": "Galeria Principal",
         "strategy": "single",
         "cameras": {
           "cam-2": [
@@ -528,7 +513,7 @@
       "enabled": true,
       "camera": "cam-2",
       "line": "638,392,1022,376",
-      "confidence": 0.3,
+      "confidence": 0.45,
       "interval": 0.25
     }
   },
@@ -538,8 +523,14 @@
   },
   "portalSync": {
     "enabled": true,
-    "url": "http://192.168.15.169:3000",
-    "apiKey": "",
+    "url": "http://10.253.0.1:3000",
+    "apiKey": "b1ccee4bc62e511df7c18be102619e6a7b7bd33a09d93c3d",
     "interval": 30000
+  },
+  "notify": {
+    "telegram": {
+      "token": "8650257978:AAGRs0EksM7yHEuH5iG13XTcH4p44iC3vdQ",
+      "chatId": "1762676629"
+    }
   }
 }

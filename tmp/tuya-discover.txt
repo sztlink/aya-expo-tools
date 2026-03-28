@@ -1,0 +1,9 @@
+Listening on UDP 6666...
+Listening on UDP 6667...
+Discovery probe sent
+UDP:6666 from 192.168.0.10: 
+UDP:6667 from 192.168.0.10: (encrypted, 20 bytes)
+UDP:6667 from 192.168.0.126: {"ip":"192.168.0.126","gwId":"eb9a38f4fa639284bcemvo","active":2,"ablilty":0,"encrypt":true,"productKey":"keyjup78v54myhan","version":"3.4","token":true,"wf_cfg":true}
+UDP:6667 from 192.168.0.184: {"ip":"192.168.0.184","gwId":"eb7a4ea2c370d73f91ymo5","active":2,"ablilty":0,"encrypt":true,"productKey":"keyjup78v54myhan","version":"3.4","token":true,"wf_cfg":true}
+UDP:6667 from 192.168.0.126: {"ip":"192.168.0.126","gwId":"eb9a38f4fa639284bcemvo","active":2,"ablilty":0,"encrypt":true,"productKey":"keyjup78v54myhan","version":"3.4","token":true,"wf_cfg":true}
+UDP:6667 from 192.168.0.184: {"ip":"192.168.0.184","gwId":"eb7a4ea2c370d73f91ymo5","active":2,"ablilty":0,"encrypt":true,"productKey":"keyjup78v54myhan","version":"3.4","token":true,"wf_cfg":true}

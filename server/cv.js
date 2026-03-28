@@ -1,17 +1,17 @@
-/**
- * AYA Expo Tools — Computer Vision Manager v2
+﻿/**
+ * AYA Expo Tools ÔÇö Computer Vision Manager v2
  *
- * v2: protocolo JSONL stdout (zero latência) em vez de polling de arquivo.
- *     Python emite eventos linha a linha; Node lê e processa em tempo real.
+ * v2: protocolo JSONL stdout (zero lat├¬ncia) em vez de polling de arquivo.
+ *     Python emite eventos linha a linha; Node l├¬ e processa em tempo real.
  *     Arquivos (heatmap.png, frame.jpg) ainda servidos como static.
  *
- * API pública (inalterada):
+ * API p├║blica (inalterada):
  *   cvManager.start()
  *   cvManager.stop()
- *   cvManager.getStatus()           → { enabled, running, totalCount, perCamera, zones, ... }
- *   cvManager.getDetections(camId)  → { count, detections, zones, fps, timestamp }
- *   cvManager.getHeatmap(camId)     → Buffer (PNG) | null
- *   cvManager.getFrame(camId)       → Buffer (JPEG) | null
+ *   cvManager.getStatus()           ÔåÆ { enabled, running, totalCount, perCamera, zones, ... }
+ *   cvManager.getDetections(camId)  ÔåÆ { count, detections, zones, fps, timestamp }
+ *   cvManager.getHeatmap(camId)     ÔåÆ Buffer (PNG) | null
+ *   cvManager.getFrame(camId)       ÔåÆ Buffer (JPEG) | null
  *   cvManager.resetHeatmap(camId)
  *   cvManager.getCounterData()
  *   cvManager.getCounterFrame()
@@ -34,34 +34,40 @@ const OUTPUT_DIR = path.join(CV_DIR, 'output');
 class CVManager extends EventEmitter {
   constructor(config) {
     super();
-    // EventEmitter: sem listener para 'error' → uncaught exception. Handler padrão.
+    // EventEmitter: sem listener para 'error' ÔåÆ uncaught exception. Handler padr├úo.
     this.on('error', (err) => {
-      console.error(`  👁️ CV [${err?.camId || '?'}] erro: ${err?.message || err}`);
+      console.error(`  ­ƒÄÑ­ƒö┤ CV [${err?.camId || '?'}] erro: ${err?.message || err}`);
     });
     this.config = config;
     this.cvConfig = config.cv || {};
     this.camerasConfig = config.cameras || [];
     this.enabled = !!this.cvConfig.enabled;
 
-    this.processes = new Map();   // camId → { process, pid, camId }
+    this.processes = new Map();   // camId ÔåÆ { process, pid, camId }
     this.counterProcess = null;
-    this._buffers = new Map();    // camId → string (linha parcial)
-    this._cache = new Map();      // camId → último evento 'detection' recebido
-    this._readyInfo = new Map();  // camId → evento 'ready' (model, format, gpuName)
+    if (this.reidProcess) { try { this.reidProcess.process.kill("SIGTERM"); } catch {} this.reidProcess = null; }
+    this.reidProcess    = null;
+    this._buffers = new Map();    // camId ÔåÆ string (linha parcial)
+    this._cache = new Map();      // camId ÔåÆ ├║ltimo evento 'detection' recebido
+    this._readyInfo = new Map();  // camId ÔåÆ evento 'ready' (model, format, gpuName)
     this._configPath = null;      // definido no start()
+    
+    // Ô¡É Peak tracking (v2.1)
+    this._peakCount = 0;
+    this._peakTimestamp = null;
   }
 
-  // ─── Public API ────────────────────────────────────────────────────────────
+  // ÔöüÔöüÔöü Public API ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
 
   start() {
     if (!this.enabled) {
-      console.log('  👁️ CV: desativado (cv.enabled = false no config)');
+      console.log('  ­ƒÄÑ­ƒƒí CV: desativado (cv.enabled = false no config)');
       return;
     }
 
     const pythonCmd = this._findPython();
     if (!pythonCmd) {
-      console.log('  👁️ CV: Python não encontrado — execute install.bat');
+      console.log('  ­ƒÄÑ­ƒƒí CV: Python n├úo encontrado ÔÇö execute install.bat');
       return;
     }
 
@@ -70,16 +76,17 @@ class CVManager extends EventEmitter {
 
     if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
-    console.log(`  👁️ CV v2: iniciando ${cvCameras.length} detector(es) | JSONL protocol`);
+    console.log(`  ­ƒÄÑ­ƒƒó CV v2: iniciando ${cvCameras.length} detector(es) | JSONL protocol`);
 
     for (const camId of cvCameras) {
       this._startDetector(camId, pythonCmd, this._configPath);
     }
 
-    // Visitor counter (ainda usa arquivo — não muda nesta versão)
+    // Visitor counter (ainda usa arquivo ÔÇö n├úo muda nesta vers├úo)
     const counterCfg = this.cvConfig.counter;
     if (counterCfg?.enabled) {
       this._startCounter(pythonCmd, this._configPath, counterCfg);
+    this._startReid(pythonCmd, this._configPath);
     }
   }
 
@@ -89,7 +96,7 @@ class CVManager extends EventEmitter {
     // Collect PIDs before killing (needed for tree-kill on Windows)
     const pids = [];
     for (const [camId, entry] of this.processes) {
-      console.log(`  👁️ CV [${camId}]: parando (PID ${entry.pid})...`);
+      console.log(`  ­ƒÄÑ­ƒö┤ CV [${camId}]: parando (PID ${entry.pid})...`);
       pids.push(entry.pid);
       try { entry.process.kill('SIGTERM'); } catch {}
     }
@@ -117,7 +124,7 @@ class CVManager extends EventEmitter {
         for (const pid of pids) {
           try {
             execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore', timeout: 5000 });
-          } catch {} // ignore — process may already be dead
+          } catch {} // ignore ÔÇö process may already be dead
         }
       }
     }, 5000);
@@ -127,11 +134,11 @@ class CVManager extends EventEmitter {
     this.config = config;
     this.cvConfig = config.cv || {};
     this.camerasConfig = config.cameras || [];
-    // Para aplicar mudanças: chamar stop() depois start()
+    // Para aplicar mudan├ºas: chamar stop() depois start()
   }
 
   /**
-   * Status agregado — shape mantido compatível com portal-sync e API REST.
+   * Status agregado ÔÇö shape mantido compat├¡vel com portal-sync e API REST.
    */
   getStatus() {
     const cvCameras = this.cvConfig.cameras || [this.cvConfig.camera || 'cam-1'];
@@ -161,8 +168,8 @@ class CVManager extends EventEmitter {
     }
 
     // Agrega zonas respeitando strategy por zona:
-    //   "max" (padrão) → câmeras no mesmo espaço físico (ex: cam-1 + cam-3 na sala imersiva)
-    //   "sum"          → câmeras em espaços distintos sem sobreposição
+    //   "max" (padr├úo) ÔåÆ c├ómeras no mesmo espa├ºo f├¡sico (ex: cam-1 + cam-3 na sala imersiva)
+    //   "sum"          ÔåÆ c├ómeras em espa├ºos distintos sem sobreposi├º├úo
     const zonesConfig = this.cvConfig.zones || [];
     const aggregatedZones = {};
 
@@ -184,9 +191,9 @@ class CVManager extends EventEmitter {
       }
     }
 
-    // totalCount: se há zonas configuradas, usa soma das zonas (mais preciso —
-    // ignora detecções fora dos polígonos como spots de luz e falsos positivos).
-    // Sem zonas: fallback para max de câmeras (comportamento legado).
+    // totalCount: se h├í zonas configuradas, usa soma das zonas (mais preciso ÔÇö
+    // ignora detec├º├Áes fora dos pol├¡gonos como spots de luz e falsos positivos).
+    // Sem zonas: fallback para max de c├ómeras (comportamento legado).
     const hasZones = zonesConfig.length > 0 && Object.keys(aggregatedZones).length > 0;
     const totalCount = hasZones
       ? Object.values(aggregatedZones).reduce((a, b) => a + b, 0)
@@ -194,7 +201,13 @@ class CVManager extends EventEmitter {
           ? counts.reduce((a, b) => a + b, 0)
           : (counts.length > 0 ? Math.max(...counts) : 0));
 
-    // Agrega dwell time por zona (combina câmeras que veem a mesma zona)
+    // Ô¡É Novo pico detectado ÔÇö salvar peak-frame.jpg de todas as c├ómeras
+    if (totalCount > this._peakCount) {
+      this._peakCount = totalCount;
+      this._savePeakFrames(totalCount);
+    }
+
+    // Agrega dwell time por zona (combina c├ómeras que veem a mesma zona)
     const aggregatedDwell = {};
     for (const zone of zonesConfig) {
       const zoneCamIds = Array.isArray(zone.cameras) ? zone.cameras : Object.keys(zone.cameras || {});
@@ -222,6 +235,7 @@ class CVManager extends EventEmitter {
     }
 
     const counterData = this._readCounterData();
+      const reidState   = this._readReidState();
 
     return {
       enabled: this.cvConfig.enabled || false,
@@ -229,6 +243,10 @@ class CVManager extends EventEmitter {
       cameras: cvCameras.length,
       countStrategy: strategy,
       totalCount,
+      peak: {
+        count: this._peakCount,
+        timestamp: this._peakTimestamp,
+      },
       zones: aggregatedZones,
       dwell: aggregatedDwell,
       zonesConfig: (this.cvConfig.zones || []).map(z => ({
@@ -241,6 +259,9 @@ class CVManager extends EventEmitter {
       counter: counterData
         ? { running: !!this.counterProcess, pid: this.counterProcess?.pid || null, ...counterData }
         : { running: !!this.counterProcess, enabled: !!(this.cvConfig.counter?.enabled) },
+      reid: reidState
+        ? { running: !!this.reidProcess, pid: this.reidProcess?.pid || null, ...reidState }
+        : { running: !!this.counterProcess, enabled: !!(this.cvConfig.counter?.enabled) },
       model: this.cvConfig.model || 'yolo11n',
       gpu: this.cvConfig.gpu ?? 0,
       protocol: 'jsonl-v2',
@@ -248,7 +269,7 @@ class CVManager extends EventEmitter {
   }
 
   getDetections(camId) {
-    // Retorna cache em memória (do JSONL) em vez de ler arquivo
+    // Retorna cache em mem├│ria (do JSONL) em vez de ler arquivo
     const cached = this._cache.get(camId);
     if (cached) return cached;
     // Fallback: arquivo (backward compat com processos antigos)
@@ -286,22 +307,70 @@ class CVManager extends EventEmitter {
   }
 
   getCounterData() { return this._readCounterData(); }
+
+  getReidState() { return this._readReidState(); }
+
+  _readReidState() {
+    const file = path.join(OUTPUT_DIR, 'reid', 'state.json');
+    if (!fs.existsSync(file)) return null;
+    try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
+  }
   getCounterFrame() {
     const file = path.join(OUTPUT_DIR, 'counter', 'frame.jpg');
     if (!fs.existsSync(file)) return null;
     try { return fs.readFileSync(file); } catch { return null; }
   }
 
-  // ─── Private: processo detector ────────────────────────────────────────────
+  // ÔöüÔöüÔöü Private: peak tracking ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
+
+  /**
+   * Salva peak-frame.jpg para cada c├ómera ativa quando h├í novo pico de visitantes.
+   * @param {number} totalCount - novo pico de total de pessoas
+   */
+  _savePeakFrames(totalCount) {
+    // Salva peak-frame.jpg para cada c├ómera ativa
+    for (const [camId, cam] of this.processes.entries()) {
+      const srcPath = path.join(OUTPUT_DIR, camId, 'frame.jpg');
+      const dstPath = path.join(OUTPUT_DIR, camId, 'peak-frame.jpg');
+      const metaPath = path.join(OUTPUT_DIR, camId, 'peak-meta.json');
+      
+      try {
+        if (fs.existsSync(srcPath)) {
+          fs.copyFileSync(srcPath, dstPath);
+        }
+        fs.writeFileSync(metaPath, JSON.stringify({
+          count: totalCount,
+          timestamp: new Date().toISOString(),
+          camId,
+        }, null, 2));
+      } catch (e) {
+        console.error(`  ­ƒÄÑ­ƒö┤ CV [${camId}] peak-frame copy error: ${e.message}`);
+      }
+    }
+    
+    // Salva tamb├®m o frame do counter (se existir)
+    const counterSrc = path.join(OUTPUT_DIR, 'counter', 'frame.jpg');
+    const counterDst = path.join(OUTPUT_DIR, 'counter', 'peak-frame.jpg');
+    try {
+      if (fs.existsSync(counterSrc)) {
+        fs.copyFileSync(counterSrc, counterDst);
+      }
+    } catch {}
+    
+    console.log(`  ­ƒÄÑÔ¡É CV: New peak: ${totalCount} people ÔÇö peak frames saved`);
+    this._peakTimestamp = new Date().toISOString();
+  }
+
+  // ÔöüÔöüÔöü Private: processo detector ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
 
   _startDetector(camId, pythonCmd, configPath) {
     const cam = this.camerasConfig.find(c => c.id === camId);
     if (!cam) {
-      console.log(`  👁️ CV: câmera ${camId} não encontrada no config`);
+      console.log(`  ­ƒÄÑ­ƒƒí CV: c├ómera ${camId} n├úo encontrada no config`);
       return;
     }
 
-    // Garante diretório de output por câmera
+    // Garante diret├│rio de output por c├ómera
     const camOutDir = path.join(OUTPUT_DIR, camId);
     if (!fs.existsSync(camOutDir)) fs.mkdirSync(camOutDir, { recursive: true });
 
@@ -325,7 +394,7 @@ class CVManager extends EventEmitter {
     if (configPath) args.push('--config', configPath);
     if (this.cvConfig.noTrt) args.push('--no-trt');
 
-    console.log(`  👁️ CV [${camId}]: iniciando (${this.cvConfig.model || 'yolo11n'}, GPU ${this.cvConfig.gpu ?? 0})`);
+    console.log(`  ­ƒÄÑ­ƒƒó CV [${camId}]: iniciando (${this.cvConfig.model || 'yolo11n'}, GPU ${this.cvConfig.gpu ?? 0})`);
 
     const proc = spawn(pythonCmd, args, {
       cwd: CV_DIR,
@@ -333,7 +402,7 @@ class CVManager extends EventEmitter {
       windowsHide: true,
     });
 
-    // ─── stdout: protocolo JSONL ──────────────────────────────────────────────
+    // ÔöüÔöüÔöü stdout: protocolo JSONL ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
     this._buffers.set(camId, '');
 
     proc.stdout.on('data', (data) => {
@@ -351,8 +420,8 @@ class CVManager extends EventEmitter {
         try {
           event = JSON.parse(trimmed);
         } catch {
-          // Linha de log não-JSON — exibe normalmente
-          console.log(`  👁️ [${camId}] ${trimmed}`);
+          // Linha de log n├úo-JSON ÔÇö exibe normalmente
+          console.log(`  ­ƒÄÑ­ƒÆ¼ [${camId}] ${trimmed}`);
           continue;
         }
 
@@ -363,17 +432,17 @@ class CVManager extends EventEmitter {
     // stderr: logs Python (model loading, warnings, erros internos)
     proc.stderr.on('data', (data) => {
       data.toString().trim().split('\n').forEach(line => {
-        if (line.trim()) console.log(`  👁️ [${camId}] ${line.trim()}`);
+        if (line.trim()) console.log(`  ­ƒÄÑ­ƒÆ¼ [${camId}] ${line.trim()}`);
       });
     });
 
     proc.on('exit', (code) => {
-      console.log(`  👁️ CV [${camId}]: processo encerrado (code ${code})`);
+      console.log(`  ­ƒÄÑ­ƒö┤ CV [${camId}]: processo encerrado (code ${code})`);
       this.processes.delete(camId);
       this._buffers.delete(camId);
 
       if (this.enabled && code !== 0) {
-        console.log(`  👁️ CV [${camId}]: reiniciando em 10s...`);
+        console.log(`  ­ƒÄÑ­ƒƒí CV [${camId}]: reiniciando em 10s...`);
         setTimeout(() => {
           if (this.enabled && !this.processes.has(camId)) {
             const py = this._findPython();
@@ -400,12 +469,12 @@ class CVManager extends EventEmitter {
           zones: event.zones || [],
           resolution: event.resolution,
         });
-        console.log(`  👁️ CV [${camId}]: pronto | ${event.format} | GPU: ${event.gpuName} | zonas: ${(event.zones || []).join(', ') || 'nenhuma'}`);
+        console.log(`  ­ƒÄÑÔ£à CV [${camId}]: pronto | ${event.format} | GPU: ${event.gpuName} | zonas: ${(event.zones || []).join(', ') || 'nenhuma'}`);
         this.emit('ready', { camId, ...event });
         break;
 
       case 'detection': {
-        // Atualiza cache (em memória — sem I/O de arquivo)
+        // Atualiza cache (em mem├│ria ÔÇö sem I/O de arquivo)
         const payload = {
           count: event.count,
           fps: event.fps,
@@ -430,17 +499,17 @@ class CVManager extends EventEmitter {
         break;
 
       case 'error':
-        console.error(`  👁️ CV [${camId}] erro: ${event.message}`);
+        console.error(`  ­ƒÄÑ­ƒö┤ CV [${camId}] erro: ${event.message}`);
         this.emit('error', { camId, ...event });
         break;
 
       default:
-        // Evento desconhecido — ignora silenciosamente
+        // Evento desconhecido ÔÇö ignora silenciosamente
         break;
     }
   }
 
-  // ─── Visitor Counter (arquivo-based, inalterado) ───────────────────────────
+  // ÔöüÔöüÔöü Visitor Counter (arquivo-based, inalterado) ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
 
   _startCounter(pythonCmd, configPath, counterCfg) {
     const camId = counterCfg.camera || 'cam-2';
@@ -463,7 +532,15 @@ class CVManager extends EventEmitter {
     if (rtspUrl) args.push('--rtsp', rtspUrl);
     if (configPath) args.push('--config', configPath);
 
-    console.log(`  👁️ CV [counter]: iniciando em ${camId}`);
+    console.log(`  ­ƒÄÑ­ƒƒó CV [counter]: iniciando em ${camId}`);
+
+    // Fresh-start marker: garante que todo restart intencional do servidor
+    // nao restaure contagens de sessoes anteriores (montagem, etc.)
+    try {
+      const counterOutDir = path.join(OUTPUT_DIR, 'counter');
+      fs.mkdirSync(counterOutDir, { recursive: true });
+      fs.writeFileSync(path.join(counterOutDir, 'fresh-start'), new Date().toISOString());
+    } catch (e) { /* nao critico */ }
 
     const proc = spawn(pythonCmd, args, {
       cwd: CV_DIR,
@@ -471,11 +548,11 @@ class CVManager extends EventEmitter {
       windowsHide: true,
     });
 
-    proc.stdout.on('data', d => d.toString().trim().split('\n').forEach(l => l.trim() && console.log(`  👁️ [counter] ${l.trim()}`)));
-    proc.stderr.on('data', d => d.toString().trim().split('\n').forEach(l => l.trim() && console.error(`  👁️ [counter] [err] ${l.trim()}`)));
+    proc.stdout.on('data', d => d.toString().trim().split('\n').forEach(l => l.trim() && console.log(`  ­ƒÄÑ­ƒÆ¼ [counter] ${l.trim()}`)));
+    proc.stderr.on('data', d => d.toString().trim().split('\n').forEach(l => l.trim() && console.error(`  ­ƒÄÑ­ƒö┤ [counter] [err] ${l.trim()}`)));
 
     proc.on('exit', (code) => {
-      console.log(`  👁️ CV [counter]: encerrado (code ${code})`);
+      console.log(`  ­ƒÄÑ­ƒö┤ CV [counter]: encerrado (code ${code})`);
       this.counterProcess = null;
       if (this.enabled && code !== 0) {
         setTimeout(() => {
@@ -490,7 +567,47 @@ class CVManager extends EventEmitter {
     this.counterProcess = { process: proc, pid: proc.pid };
   }
 
-  // ─── Helpers ───────────────────────────────────────────────────────────────
+  _startReid(pythonCmd, configPath) {
+    // Forçar venv python (reid.py precisa de onnxruntime do venv)
+    const venvPy = path.join(CV_DIR, 'venv', 'Scripts', 'python.exe');
+    if (fs.existsSync(venvPy)) pythonCmd = venvPy;
+    const reidScript = path.join(CV_DIR, 'reid.py');
+    if (!fs.existsSync(reidScript)) {
+      console.log('  [ReID] reid.py nao encontrado — pulando');
+      return;
+    }
+
+    const args = [reidScript, '--interval', '2'];
+    if (configPath) args.push('--config', configPath);
+
+    console.log('  [ReID] Iniciando reid.py...');
+
+    const proc = require('child_process').spawn(pythonCmd, args, {
+      cwd: CV_DIR,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+
+    proc.stdout.on('data', d => d.toString().trim().split('\n').forEach(l => l.trim() && console.log('[ReID] ' + l.trim())));
+    proc.stderr.on('data', d => d.toString().trim().split('\n').forEach(l => l.trim() && console.error('[ReID][err] ' + l.trim())));
+
+    proc.on('exit', (code) => {
+      console.log('[ReID] Encerrado (code ' + code + ')');
+      this.reidProcess = null;
+      if (this.enabled && code !== 0) {
+        setTimeout(() => {
+          if (this.enabled) {
+            const py = this._findPython();
+            if (py) this._startReid(py, configPath);
+          }
+        }, 10000);
+      }
+    });
+
+    this.reidProcess = { process: proc, pid: proc.pid };
+  }
+
+  // ÔöüÔöüÔöü Helpers ÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöüÔöü
 
   _readDetectionsFile(camId) {
     const file = camId
@@ -515,7 +632,7 @@ class CVManager extends EventEmitter {
   }
 
   _findPython() {
-    // Venv first — on Windows, the venv launcher spawns system python as a child
+    // Venv first ÔÇö on Windows, the venv launcher spawns system python as a child
     // process, but crucially it activates the virtual environment so the child
     // inherits torch/ultralytics/etc from venv site-packages. Running system
     // Python directly would fail on import (deps not installed globally).
@@ -539,7 +656,7 @@ class CVManager extends EventEmitter {
   }
 
   _getConfigPath() {
-    // Tenta ler do argv (--config=beleza-astral) ou usa o primeiro config disponível
+    // Tenta ler do argv (--config=beleza-astral) ou usa o primeiro config dispon├¡vel
     const configArg = process.argv.find(a => a.startsWith('--config='));
     const configName = configArg ? configArg.split('=')[1] : null;
     if (configName) {
