@@ -1,5 +1,5 @@
 // AYA Expo Tools — Main App (Preact with htm)
-import { html, render, useState, useEffect } from './lib/preact-standalone.module.js';
+import { html, render, useState, useEffect, Component } from './lib/preact-standalone.module.js';
 
 // Pages (lazy loaded)
 let Dashboard, CV, SelfTest, Setup, Archive;
@@ -193,6 +193,8 @@ function App() {
         }
       } catch (err) {
         console.error('[App] Failed to load pages:', err);
+        // Show error in UI instead of infinite loading
+        document.querySelector('main').innerHTML = '<div style="color:#ff2d78;padding:2em"><h2>Erro ao carregar paginas</h2><pre>' + err.message + '</pre></div>';
       }
     };
     loadPages();
@@ -221,4 +223,4 @@ function App() {
 render(html`<${App} />`, document.getElementById('app'));
 
 // Export for use in components
-export { html, useState, useEffect };
+export { html, useState, useEffect, Component };
