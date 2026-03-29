@@ -75,6 +75,7 @@ if (setupMode) {
   require('./core/routes/config')(app, config);
   require('./core/routes/health')(app, core);
   require('./core/routes/schedule')(app, { scheduler });
+  require('./core/routes/archive')(app, config);
 
   // ── Start ────────────────────────────────────────────────
   core.start(config, { app, server });
