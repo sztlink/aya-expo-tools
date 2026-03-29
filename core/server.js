@@ -162,8 +162,8 @@ function createApp(config) {
 
 // ─── Start Server ──────────────────────────────────────────
 function start(config, { app, server }, managers = {}) {
-  const PORT = config.server?.port || 3000;
-  const HOST = config.server?.host || '0.0.0.0';
+  const PORT = config?.server?.port || 3000;
+  const HOST = config?.server?.host || '0.0.0.0';
 
   server.listen(PORT, HOST, () => {
     console.log(`  🌐 http://localhost:${PORT}`);
