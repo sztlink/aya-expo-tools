@@ -12,3 +12,5 @@ media/*.avi
 media/*.mkv
 config/tuya-cloud.json
 installer/output/
+src-tauri/target/
+src-tauri/target/

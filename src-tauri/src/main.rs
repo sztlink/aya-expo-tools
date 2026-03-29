@@ -42,7 +42,7 @@ fn start_node_server() -> Option<Child> {
 
 fn main() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
+        //.plugin(tauri_plugin_shell::init())
         .setup(|app| {
             // Start Node.js server as sidecar
             let child = start_node_server();

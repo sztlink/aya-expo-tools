@@ -1,19 +1,16 @@
 {
-  "$schema": "https://raw.githubusercontent.com/nicholasFlye/tauri/v2/tooling/cli/schema.json",
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-config-schema/schema.json",
   "productName": "AYA Expo Tools",
   "version": "2.1.0",
   "identifier": "com.aya.expo-tools",
   "build": {
     "frontendDist": "../ui",
-    "devUrl": "http://localhost:3000",
-    "beforeDevCommand": "",
-    "beforeBuildCommand": ""
+    "devUrl": "http://localhost:3000"
   },
   "app": {
-    "title": "AYA Expo Tools",
     "windows": [
       {
-        "title": "AYA Expo Tools",
+        "label": "main",
         "width": 1280,
         "height": 800,
         "minWidth": 1024,
@@ -33,11 +30,6 @@
     "targets": ["msi", "nsis"],
     "icon": [
       "icons/icon.ico"
-    ],
-    "windows": {
-      "certificateThumbprint": null,
-      "digestAlgorithm": "sha256",
-      "timestampUrl": ""
-    }
+    ]
   }
 }
