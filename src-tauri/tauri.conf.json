@@ -4,8 +4,7 @@
   "version": "2.1.0",
   "identifier": "com.aya.expo-tools",
   "build": {
-    "frontendDist": "../ui",
-    "devUrl": "http://localhost:3000"
+    "frontendDist": "../ui"
   },
   "app": {
     "windows": [
@@ -22,14 +21,19 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:* ws://localhost:*; img-src 'self' data: blob:"
+      "csp": "default-src 'self' http://localhost:*; script-src 'self' 'unsafe-eval' http://localhost:*; style-src 'self' 'unsafe-inline' http://localhost:*; connect-src 'self' http://localhost:* ws://localhost:*; img-src 'self' data: blob: http://localhost:*; font-src 'self' http://localhost:*"
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["msi", "nsis"],
+    "targets": ["msi"],
     "icon": [
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "wix": {
+        "language": "pt-BR"
+      }
+    }
   }
 }
