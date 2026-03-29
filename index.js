@@ -53,10 +53,19 @@ for (const [name, cluster] of Object.entries(clusters)) {
   cluster.register(app, config, clusters);
 }
 
+// ── Scheduler ──────────────────────────────────────────────
+const { Scheduler } = require('./core/scheduler');
+const scheduler = new Scheduler(config, clusters, {
+  addLogEntry: core.addLogEntry,
+  broadcast: core.broadcast
+});
+
 // ── Core routes ────────────────────────────────────────────
 require('./core/routes/session')(app, { session: core.session, addLogEntry: core.addLogEntry });
 require('./core/routes/config')(app, config);
 require('./core/routes/health')(app, core);
+require('./core/routes/schedule')(app, { scheduler });
 
 // ── Start ──────────────────────────────────────────────────
 core.start(config, { app, server });
+scheduler.start();

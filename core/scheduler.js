@@ -1,377 +1,151 @@
 /**
- * AYA Expo Tools — Scheduler
+ * AYA Expo Tools v2 — Scheduler
  *
- * Cron-based automation for the full expo operating cycle.
+ * Orchestrates all clusters via their onOpen()/onClose() contract.
  *
- * Supports two config formats:
+ * Config:
+ *   schedule.days: { mon: { open: "09:00", close: "20:00" }, tue: null, ... }
+ *   schedule.timezone: "America/Sao_Paulo"
  *
- * 1) Simple (same time every day):
- *    { "enabled": true, "powerOn": "09:00", "powerOff": "20:00" }
+ * Open sequence:  equipment → cameras → cv → communication
+ * Close sequence: communication → cv → cameras → equipment
  *
- * 2) Per-day (different times per weekday):
- *    { "enabled": true, "days": {
- *        "mon": { "open": "10:00", "close": "20:00" },
- *        "tue": { "open": "10:00", "close": "20:00" },
- *        "wed": { "open": "10:00", "close": "20:00" },
- *        "thu": { "open": "10:00", "close": "20:00" },
- *        "fri": { "open": "10:00", "close": "20:00" },
- *        "sat": { "open": "10:00", "close": "18:00" },
- *        "sun": null  // closed
- *    }}
- *
- * Sequences:
- *   Open:  tv-on-all → (warmup delay) → tv-cast-all → projectors-on
- *   Close: projectors-off → tv-stop-all
+ * Each step is try/catch — failure in one cluster doesn't block the rest.
  */
 
-const cron = require('node-cron');
-let _audio = null;
-try { _audio = require('./audio'); } catch { /* audio opcional */ }
-let _tuya = null;
-try { _tuya = require('./tuya'); } catch { /* tuya opcional */ }
+'use strict';
 
-const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-const DAY_LABELS = {
-  sun: 'Domingo', mon: 'Segunda', tue: 'Terça', wed: 'Quarta',
-  thu: 'Quinta', fri: 'Sexta', sat: 'Sábado',
-};
-const DAY_CRON = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+const cron = require('node-cron');
+
+const OPEN_ORDER = ['equipment', 'cameras', 'cv', 'data', 'communication'];
+const CLOSE_ORDER = [...OPEN_ORDER].reverse();
+
+const DAY_MAP = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
 
 class Scheduler {
-  constructor(projectorManager, config, tvModule, serverHealth) {
-    this.pm = projectorManager;
-    this.tvModule = tvModule || null;
-    this.serverHealth = serverHealth || null;  // para verificar se Arena está pronto
-    this.fullConfig = config;
-    this.config = config.schedule || {};
-    this.tvConfig = config.tvs || [];
-    this.plugConfig = config.smartplugs || [];
-    this.serverConfig = config.server || {};
+  constructor(config, clusters, opts = {}) {
+    this.config = config;
+    this.clusters = clusters;
+    this.addLogEntry = opts.addLogEntry || (() => {});
+    this.broadcast = opts.broadcast || (() => {});
     this.jobs = [];
-    this.enabled = false;
-    this.log = [];
+    this.isOpen = false;
+    this.lastAction = null;
   }
 
   start() {
-    this.stop();
-
-    if (!this.config.enabled) {
-      console.log('[Scheduler] Disabled in config');
+    const sched = this.config.schedule;
+    if (!sched || !sched.days) {
+      console.log('  📅 Scheduler: no schedule configured');
       return;
     }
 
-    const tz = this.config.timezone || 'America/Sao_Paulo';
-    const days = this._normalizeDays();
+    const tz = sched.timezone || 'America/Sao_Paulo';
+    const days = sched.days;
+    let jobCount = 0;
 
-    if (!days || Object.keys(days).length === 0) {
-      console.log('[Scheduler] No schedule days configured');
-      return;
+    for (const [dayName, times] of Object.entries(days)) {
+      if (!times) continue; // null = closed day
+
+      const dayNum = DAY_MAP[dayName];
+      if (dayNum === undefined) continue;
+
+      if (times.open) {
+        const [h, m] = times.open.split(':').map(Number);
+        const cronExpr = `${m} ${h} * * ${dayNum}`;
+        const job = cron.schedule(cronExpr, () => this.executeOpen(), { timezone: tz });
+        this.jobs.push(job);
+        jobCount++;
+      }
+
+      if (times.close) {
+        const [h, m] = times.close.split(':').map(Number);
+        const cronExpr = `${m} ${h} * * ${dayNum}`;
+        const job = cron.schedule(cronExpr, () => this.executeClose(), { timezone: tz });
+        this.jobs.push(job);
+        jobCount++;
+      }
     }
 
-    let openCount = 0;
-
-    for (const [dayKey, times] of Object.entries(days)) {
-      if (!times || !times.open || !times.close) continue; // day off
-
-      const cronDay = DAY_CRON[dayKey];
-
-      // Open job
-      const [oh, om] = times.open.split(':');
-      const openExpr = `${parseInt(om)} ${parseInt(oh)} * * ${cronDay}`;
-      const openJob = cron.schedule(openExpr, () => {
-        console.log(`[Scheduler] ▶ OPEN (${DAY_LABELS[dayKey]}) at ${times.open}`);
-        this._runOpenSequence();
-      }, { timezone: tz });
-      this.jobs.push(openJob);
-
-      // Close job
-      const [ch, cm] = times.close.split(':');
-      const closeExpr = `${parseInt(cm)} ${parseInt(ch)} * * ${cronDay}`;
-      const closeJob = cron.schedule(closeExpr, () => {
-        console.log(`[Scheduler] ⏹ CLOSE (${DAY_LABELS[dayKey]}) at ${times.close}`);
-        this._runCloseSequence();
-      }, { timezone: tz });
-      this.jobs.push(closeJob);
-
-      openCount++;
-    }
-
-    this.enabled = true;
-    const todayTimes = this.getToday();
-    const todayStr = todayTimes
-      ? `hoje: ${todayTimes.open}–${todayTimes.close}`
-      : 'hoje: FECHADO';
-    console.log(`[Scheduler] Started — ${openCount} dia(s) configurado(s), ${todayStr} (${tz})`);
-    if (this.tvConfig.length > 0 && this.tvModule) {
-      console.log(`[Scheduler] TVs included: ${this.tvConfig.length} TVs`);
-    }
+    console.log(`  📅 Scheduler: ${jobCount} jobs scheduled (tz: ${tz})`);
   }
-
-  /**
-   * Normalize config to per-day format.
-   * Simple format (powerOn/powerOff) → all 7 days same time.
-   */
-  _normalizeDays() {
-    if (this.config.days) {
-      return this.config.days;
-    }
-
-    // Legacy simple format → convert to per-day (every day)
-    if (this.config.powerOn && this.config.powerOff) {
-      const days = {};
-      for (const d of DAY_KEYS) {
-        days[d] = { open: this.config.powerOn, close: this.config.powerOff };
-      }
-      return days;
-    }
-
-    return null;
-  }
-
-  /**
-   * Get today's schedule (or null if closed today).
-   */
-  getToday() {
-    const days = this._normalizeDays();
-    if (!days) return null;
-    const now = new Date();
-    // Use timezone-aware day
-    const dayIdx = new Intl.DateTimeFormat('en-US', {
-      weekday: 'short',
-      timeZone: this.config.timezone || 'America/Sao_Paulo',
-    }).format(now).toLowerCase();
-    const dayKey = DAY_KEYS.find(d => dayIdx.startsWith(d)) || DAY_KEYS[now.getDay()];
-    const times = days[dayKey];
-    if (!times || !times.open || !times.close) return null;
-    return { day: dayKey, label: DAY_LABELS[dayKey], ...times };
-  }
-
-  // ── Open Sequence ──────────────────────────────────────────
-  async _runOpenSequence() {
-    const delay = this.config.tvWarmupDelay || 30000;
-    console.log(`[Scheduler] ▶ OPEN sequence started at ${new Date().toISOString()}`);
-    this.addLog('open-sequence', 'started');
-
-    // Step 0: Aguarda Resolume estar pronto (caso o servidor tenha reiniciado)
-    // Arena.exe demora ~60s para abrir e começar a renderizar após o boot.
-    // Proxy: GPU 0 com utilização > 20% indica que o Resolume está renderizando.
-    await this._waitForResolume();
-
-    // Step 0.5: Turn on smart plugs (TVs need power before WOL)
-    if (_tuya && _tuya.isConfigured() && this.plugConfig.length > 0) {
-      try {
-        this.addLog('plugs-on', 'started');
-        const results = await _tuya.allOn(this.plugConfig);
-        const ok = results.filter(r => r.ok).length;
-        this.addLog('plugs-on', 'completed', `${ok}/${results.length} plugs ligados`);
-        console.log(`[Scheduler] 🔌 Smart plugs ligados: ${ok}/${results.length}`);
-        // Wait for TVs to boot from power restore
-        if (ok > 0) await this._sleep(15000);
-      } catch (err) {
-        this.addLog('plugs-on', 'error', err.message);
-      }
-    }
-
-    // Step 1: Wake TVs via WOL
-    if (this.tvModule && this.tvConfig.length > 0) {
-      try {
-        this.addLog('tv-on-all', 'started');
-        await Promise.allSettled(this.tvConfig.map(t => this.tvModule.powerOn(t)));
-        this.addLog('tv-on-all', 'completed');
-        console.log(`[Scheduler] TVs WOL sent, waiting ${delay / 1000}s for boot...`);
-      } catch (err) {
-        this.addLog('tv-on-all', 'error', err.message);
-      }
-
-      await this._sleep(delay);
-
-      // Step 2: Cast video to each TV
-      try {
-        this.addLog('tv-cast-all', 'started');
-        const mediaServer = this.fullConfig.exhibition?.network?.mediaServer || 'localhost';
-        const port = this.serverConfig.port || 3000;
-        const baseUrl = `http://${mediaServer}:${port}`;
-        for (const t of this.tvConfig) {
-          if (!t.videoUrl) continue;
-          this.tvModule.startLoop(t, t.videoUrl, {
-            title: t.videoTitle || t.name,
-            baseUrl,
-          });
-        }
-        this.addLog('tv-cast-all', 'completed');
-      } catch (err) {
-        this.addLog('tv-cast-all', 'error', err.message);
-      }
-    }
-
-    // Step 3: Power on projectors
-    try {
-      this.addLog('power-on-all', 'started');
-      await this.pm.powerOnAll();
-      this.addLog('power-on-all', 'completed');
-    } catch (err) {
-      this.addLog('power-on-all', 'error', err.message);
-    }
-
-    // Step 4: Restore audio volume
-    const openVolume = this.config.audioVolume ?? 80;
-    if (_audio) {
-      try {
-        _audio.setVolume(openVolume);
-        this.addLog('audio-volume', 'completed', `${openVolume}%`);
-        console.log(`[Scheduler] 🔊 Volume restaurado: ${openVolume}%`);
-      } catch (err) {
-        this.addLog('audio-volume', 'error', err.message);
-      }
-    }
-
-    this.addLog('open-sequence', 'completed');
-    console.log(`[Scheduler] ▶ OPEN sequence completed`);
-  }
-
-  // ── Close Sequence ─────────────────────────────────────────
-  async _runCloseSequence() {
-    console.log(`[Scheduler] ⏹ CLOSE sequence started at ${new Date().toISOString()}`);
-    this.addLog('close-sequence', 'started');
-
-    try {
-      this.addLog('power-off-all', 'started');
-      await this.pm.powerOffAll();
-      this.addLog('power-off-all', 'completed');
-    } catch (err) {
-      this.addLog('power-off-all', 'error', err.message);
-    }
-
-    if (this.tvModule && this.tvConfig.length > 0) {
-      try {
-        this.addLog('tv-stop-all', 'started');
-        for (const t of this.tvConfig) { this.tvModule.stopLoop(t); }
-        await Promise.allSettled(this.tvConfig.map(t => this.tvModule.castStop(t)));
-        this.addLog('tv-stop-all', 'completed');
-      } catch (err) {
-        this.addLog('tv-stop-all', 'error', err.message);
-      }
-    }
-
-    // Step 3: Turn off smart plugs (cuts power to TVs)
-    if (_tuya && _tuya.isConfigured() && this.plugConfig.length > 0) {
-      try {
-        this.addLog('plugs-off', 'started');
-        const results = await _tuya.allOff(this.plugConfig);
-        const ok = results.filter(r => r.ok).length;
-        this.addLog('plugs-off', 'completed', `${ok}/${results.length} plugs desligados`);
-        console.log(`[Scheduler] 🔌 Smart plugs desligados: ${ok}/${results.length}`);
-      } catch (err) {
-        this.addLog('plugs-off', 'error', err.message);
-      }
-    }
-
-    // Step 4: Fade audio to 0
-    if (_audio) {
-      try {
-        _audio.setVolume(0);
-        this.addLog('audio-volume', 'completed', '0% (fechamento)');
-        console.log(`[Scheduler] 🔇 Volume zerado (fechamento)`);
-      } catch (err) {
-        this.addLog('audio-volume', 'error', err.message);
-      }
-    }
-
-    this.addLog('close-sequence', 'completed');
-    console.log(`[Scheduler] ⏹ CLOSE sequence completed`);
-  }
-
-  /**
-   * Aguarda o Resolume (Arena.exe) estar rodando e renderizando.
-   * Verifica via server-health: processo ativo + GPU 0 util > 20%.
-   * Timeout: 90s (Arena demora ~60s para abrir o projeto).
-   * Se server-health não disponível, apenas aguarda 5s e segue.
-   */
-  async _waitForResolume() {
-    const MAX_WAIT = 90_000;  // 90s máximo
-    const CHECK_INTERVAL = 5_000;
-    const start = Date.now();
-
-    if (!this.serverHealth) {
-      // Sem health monitor — espera conservadora e segue
-      console.log('[Scheduler] Sem health monitor — aguardando 5s antes de ligar projetores');
-      await this._sleep(5000);
-      return;
-    }
-
-    console.log('[Scheduler] Verificando se Resolume está pronto...');
-    this.addLog('resolume-check', 'started');
-
-    while (Date.now() - start < MAX_WAIT) {
-      const snap = this.serverHealth.getCurrent?.();
-      const arenaRunning = snap?.resolume === true;
-      const gpuUtil = snap?.gpus?.[0]?.utilization ?? 0;
-      const gpuReady = gpuUtil > 20;
-
-      if (arenaRunning && gpuReady) {
-        const waited = Math.round((Date.now() - start) / 1000);
-        console.log(`[Scheduler] ✅ Resolume pronto (${waited}s, GPU ${gpuUtil}%)`);
-        this.addLog('resolume-check', 'completed', `pronto em ${waited}s, GPU ${gpuUtil}%`);
-        return;
-      }
-
-      const elapsed = Math.round((Date.now() - start) / 1000);
-      console.log(`[Scheduler] ⏳ Resolume não pronto ainda (${elapsed}s) — Arena: ${arenaRunning}, GPU: ${gpuUtil}%`);
-      await this._sleep(CHECK_INTERVAL);
-    }
-
-    // Timeout — segue mesmo assim (melhor ligar os projetores tarde do que não ligar)
-    console.log('[Scheduler] ⚠️ Resolume não confirmado após 90s — prosseguindo mesmo assim');
-    this.addLog('resolume-check', 'timeout', '90s sem confirmar — projetores ligados assim mesmo');
-  }
-
-  async runOpen() { return this._runOpenSequence(); }
-  async runClose() { return this._runCloseSequence(); }
-  _sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
   stop() {
     this.jobs.forEach(j => j.stop());
     this.jobs = [];
-    this.enabled = false;
+    console.log('  📅 Scheduler: stopped');
   }
 
-  addLog(action, status, detail = '') {
-    this.log.unshift({ time: new Date().toISOString(), action, status, detail });
-    if (this.log.length > 100) this.log.length = 100;
+  async executeOpen() {
+    console.log(`\n  📅 [${new Date().toLocaleTimeString()}] Opening exhibition...`);
+    this.addLogEntry('scheduler', 'open-start');
+    this.broadcast({ type: 'scheduler', action: 'open-start', timestamp: Date.now() });
+
+    for (const name of OPEN_ORDER) {
+      const cluster = this.clusters[name];
+      if (!cluster) continue;
+
+      try {
+        console.log(`  📅   ${name}.onOpen()...`);
+        await cluster.onOpen();
+        console.log(`  📅   ✓ ${name} opened`);
+        this.addLogEntry('scheduler', `open-${name}-ok`);
+      } catch (err) {
+        console.error(`  📅   ✗ ${name} failed: ${err.message}`);
+        this.addLogEntry('scheduler', `open-${name}-error`, { error: err.message });
+      }
+    }
+
+    this.isOpen = true;
+    this.lastAction = { type: 'open', timestamp: new Date().toISOString() };
+    this.addLogEntry('scheduler', 'open-complete');
+    this.broadcast({ type: 'scheduler', action: 'open-complete', timestamp: Date.now() });
+    console.log('  📅 Exhibition opened.\n');
+  }
+
+  async executeClose() {
+    console.log(`\n  📅 [${new Date().toLocaleTimeString()}] Closing exhibition...`);
+    this.addLogEntry('scheduler', 'close-start');
+    this.broadcast({ type: 'scheduler', action: 'close-start', timestamp: Date.now() });
+
+    for (const name of CLOSE_ORDER) {
+      const cluster = this.clusters[name];
+      if (!cluster) continue;
+
+      try {
+        console.log(`  📅   ${name}.onClose()...`);
+        await cluster.onClose();
+        console.log(`  📅   ✓ ${name} closed`);
+        this.addLogEntry('scheduler', `close-${name}-ok`);
+      } catch (err) {
+        console.error(`  📅   ✗ ${name} failed: ${err.message}`);
+        this.addLogEntry('scheduler', `close-${name}-error`, { error: err.message });
+      }
+    }
+
+    this.isOpen = false;
+    this.lastAction = { type: 'close', timestamp: new Date().toISOString() };
+    this.addLogEntry('scheduler', 'close-complete');
+    this.broadcast({ type: 'scheduler', action: 'close-complete', timestamp: Date.now() });
+    console.log('  📅 Exhibition closed.\n');
   }
 
   getStatus() {
-    const days = this._normalizeDays() || {};
-    const today = this.getToday();
-    return {
-      enabled: this.enabled,
-      timezone: this.config.timezone || 'America/Sao_Paulo',
-      tvWarmupDelay: (this.config.tvWarmupDelay || 30000) / 1000,
-      includeTvs: !!(this.tvModule && this.tvConfig.length > 0),
-      tvCount: this.tvConfig.length,
-      // Per-day schedule
-      days,
-      // Today's schedule (convenience)
-      today: today ? { day: today.day, label: today.label, open: today.open, close: today.close } : null,
-      // Legacy fields (backward compat)
-      powerOn: today?.open || this.config.powerOn || null,
-      powerOff: today?.close || this.config.powerOff || null,
-      recentLogs: this.log.slice(0, 20),
-    };
-  }
+    const sched = this.config.schedule || {};
+    const now = new Date();
+    const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    const todayName = dayNames[now.getDay()];
+    const todaySchedule = sched.days ? sched.days[todayName] : null;
 
-  updateConfig(newConfig) {
-    if (newConfig.schedule) {
-      this.config = newConfig.schedule;
-    } else {
-      Object.assign(this.config, newConfig);
-    }
-    this.tvConfig = newConfig.tvs || this.fullConfig.tvs || [];
-    if (this.config.enabled) {
-      this.start();
-    } else {
-      this.stop();
-    }
+    return {
+      isOpen: this.isOpen,
+      lastAction: this.lastAction,
+      today: todayName,
+      todaySchedule,
+      timezone: sched.timezone || 'America/Sao_Paulo',
+      schedule: sched.days || {},
+      jobCount: this.jobs.length
+    };
   }
 }
 
