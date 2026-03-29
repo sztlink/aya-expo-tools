@@ -93,6 +93,24 @@ const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
 const wsUrl = `${wsProtocol}//${location.host}/ws`;
 export const ws = new WSClient(wsUrl);
 
+// ─── Auth Token Helper (Story 4-5) ─────────────────────────
+function getToken() {
+  const meta = document.querySelector('meta[name="aya-token"]');
+  return meta ? meta.getAttribute('content') : null;
+}
+
+// Authenticated fetch wrapper
+export async function authFetch(url, options = {}) {
+  const token = getToken();
+  if (token) {
+    options.headers = {
+      ...options.headers,
+      'X-AYA-Token': token
+    };
+  }
+  return fetch(url, options);
+}
+
 // Router
 function getRoute() {
   const hash = location.hash.slice(1) || '/dashboard';

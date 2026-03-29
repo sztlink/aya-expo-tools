@@ -66,6 +66,51 @@ function createApp(config) {
 
   // Middleware
   app.use(express.json({ limit: '10mb' }));
+
+  // ─── Auth Middleware (Story 4-5) ──────────────────────────
+  const AYA_TOKEN = process.env.AYA_TOKEN;
+  
+  app.use((req, res, next) => {
+    // Skip auth if no token configured (dev mode)
+    if (!AYA_TOKEN) return next();
+    
+    // Skip auth for static files (no /api prefix)
+    if (!req.path.startsWith('/api')) return next();
+    
+    // Skip auth for public routes
+    if (req.path === '/api/health' || req.path.startsWith('/setup')) {
+      return next();
+    }
+    
+    // Check X-AYA-Token header
+    const token = req.headers['x-aya-token'];
+    if (!token || token !== AYA_TOKEN) {
+      return res.status(401).json({
+        ok: false,
+        error: 'Auth required',
+        code: 'AUTH_REQUIRED'
+      });
+    }
+    
+    next();
+  });
+
+  // Serve index.html with token injection
+  app.get('/', (req, res) => {
+    const indexPath = path.join(__dirname, '..', 'ui', 'index.html');
+    let html = fs.readFileSync(indexPath, 'utf8');
+    
+    // Inject token as meta tag if configured
+    if (AYA_TOKEN) {
+      html = html.replace(
+        '</head>',
+        `  <meta name="aya-token" content="${AYA_TOKEN}">\n</head>`
+      );
+    }
+    
+    res.send(html);
+  });
+
   app.use(express.static(path.join(__dirname, '..', 'ui')));
 
   // Middleware: bloqueia comandos remotos destrutivos durante sessão ativa
