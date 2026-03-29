@@ -213,20 +213,69 @@ module.exports = function(app) {
       // Simple network scan using arp -a (Windows)
       const { stdout } = await execAsync('arp -a');
       
+      // OUI lookup — primeiros 3 octetos do MAC identificam fabricante
+      const OUI_TABLE = {
+        'c4:08:26': { vendor: 'Hisense', deviceType: 'tv' },
+        'c4-08-26': { vendor: 'Hisense', deviceType: 'tv' },
+        '00:9e:c8': { vendor: 'Hisense', deviceType: 'tv' },
+        '9c:8e:cd': { vendor: 'Intelbras', deviceType: 'camera' },
+        '9c-8e-cd': { vendor: 'Intelbras', deviceType: 'camera' },
+        '78:a5:04': { vendor: 'Intelbras', deviceType: 'camera' },
+        'b0:4e:26': { vendor: 'Intelbras', deviceType: 'camera' },
+        '00:1e:c0': { vendor: 'NEC', deviceType: 'projector' },
+        '00-1e-c0': { vendor: 'NEC', deviceType: 'projector' },
+        '04:98:f3': { vendor: 'NEC', deviceType: 'projector' },
+        'e0:27:1a': { vendor: 'Epson', deviceType: 'projector' },
+        'c8:2b:96': { vendor: 'Epson', deviceType: 'projector' },
+        '00:26:b8': { vendor: 'Christie', deviceType: 'projector' },
+        'ac:c1:ee': { vendor: 'Panasonic', deviceType: 'projector' },
+        'dc:4a:3e': { vendor: 'Panasonic', deviceType: 'projector' },
+        'd8:47:10': { vendor: 'Tuya', deviceType: 'plug' },
+        '10:d5:61': { vendor: 'Tuya', deviceType: 'plug' },
+        '48:55:19': { vendor: 'Tuya', deviceType: 'plug' },
+        '7c:f6:66': { vendor: 'Tuya', deviceType: 'plug' },
+        '70:b3:d5': { vendor: 'Hikvision', deviceType: 'camera' },
+        'c0:56:e3': { vendor: 'Hikvision', deviceType: 'camera' },
+        'a4:cf:12': { vendor: 'Dahua', deviceType: 'camera' },
+        'e0:50:8b': { vendor: 'Dahua', deviceType: 'camera' },
+      };
+
+      function lookupOUI(mac) {
+        if (!mac) return { vendor: null, deviceType: 'unknown' };
+        const prefix = mac.toLowerCase().substring(0, 8);
+        return OUI_TABLE[prefix] || { vendor: null, deviceType: 'unknown' };
+      }
+
+      const DEVICE_TYPE_LABELS = {
+        tv: 'TV',
+        camera: 'Camera',
+        projector: 'Projetor',
+        plug: 'Tomada',
+        unknown: 'Desconhecido'
+      };
+
       const devices = [];
       const lines = stdout.split('\n');
       
       for (const line of lines) {
-        // Match IP and MAC from arp output
         const match = line.match(/(\d+\.\d+\.\d+\.\d+)\s+([0-9a-f-]+)\s+(\w+)/i);
         if (match) {
+          const mac = match[2];
+          const oui = lookupOUI(mac);
           devices.push({
             ip: match[1],
-            mac: match[2],
-            type: match[3]
+            mac,
+            vendor: oui.vendor,
+            deviceType: oui.deviceType,
+            deviceTypeLabel: DEVICE_TYPE_LABELS[oui.deviceType] || 'Desconhecido',
+            interfaceType: match[3]
           });
         }
       }
+
+      // Ordena: equipamentos conhecidos primeiro
+      const typeOrder = { projector: 0, camera: 1, tv: 2, plug: 3, unknown: 4 };
+      devices.sort((a, b) => (typeOrder[a.deviceType] || 4) - (typeOrder[b.deviceType] || 4));
       
       res.json({ ok: true, devices });
     } catch (err) {

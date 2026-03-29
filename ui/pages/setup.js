@@ -343,7 +343,7 @@ function Step2({ data, onChange }) {
   const [devices, setDevices] = useState([]);
 
   useEffect(() => {
-    onChange({ mediaServer });
+    onChange({ mediaServer, devices });
   }, [mediaServer]);
 
   const handleScan = async () => {
@@ -397,12 +397,18 @@ function Step2({ data, onChange }) {
       ${devices.length > 0 && html`
         <${Card} title="Dispositivos Encontrados">
           <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-            ${devices.map(device => html`
-              <div style="display: flex; justify-content: space-between; padding: 0.5rem; border-bottom: 1px solid var(--border);">
-                <span class="mono">${device.ip}</span>
-                <${Badge} variant="muted">${device.mac}</${Badge}>
-              </div>
-            `)}
+            ${devices.map(device => {
+              const variantMap = { projector: 'primary', camera: 'accent', tv: 'info', plug: 'warning', unknown: 'muted' };
+              const variant = variantMap[device.deviceType] || 'muted';
+              return html`
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; border-bottom: 1px solid var(--border); gap: 1rem;">
+                  <span style="font-family: var(--font-mono); font-weight: 600;">${device.ip}</span>
+                  <span style="font-family: var(--font-mono); color: var(--muted-foreground); font-size: 0.8rem;">${device.mac || '—'}</span>
+                  ${device.vendor && html`<span style="color: var(--foreground); font-size: 0.85rem;">${device.vendor}</span>`}
+                  <${Badge} variant=${variant}>${device.deviceTypeLabel || device.deviceType}</${Badge}>
+                </div>
+              `;
+            })}
           </div>
         </${Card}>
       `}

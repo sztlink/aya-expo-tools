@@ -10,6 +10,7 @@
     "windows": [
       {
         "label": "main",
+        "title": "AYA Expo Tools",
         "width": 1280,
         "height": 800,
         "minWidth": 1024,
