@@ -3,69 +3,80 @@
 const path = require('path');
 const { loadConfig, getConfigName } = require('./core/config-loader');
 
-// ── Load config ────────────────────────────────────────────
+// ── Load config (optional in setup mode) ───────────────────
 const configName = getConfigName();
-if (!configName) {
-  console.log('\n  ◇ aya-expo-tools v2');
-  console.log('  No config specified. Run with --config=<name>');
-  console.log('  Available configs:');
-  const { loadConfig: lc } = require('./core/config-loader');
-  const check = lc('__nonexistent__');
-  if (check.available) check.available.forEach(c => console.log(`    - ${c}`));
-  // TODO Sprint 5: start server with /setup wizard
-  process.exit(1);
+const setupMode = !configName;
+
+let config = null;
+if (!setupMode) {
+  const result = loadConfig(configName);
+  if (!result.valid) {
+    console.error(`Config error: ${result.error}`);
+    if (result.available) console.error('Available:', result.available.join(', '));
+    process.exit(1);
+  }
+  config = result.config;
 }
 
-const result = loadConfig(configName);
-if (!result.valid) {
-  console.error(`Config error: ${result.error}`);
-  if (result.available) console.error('Available:', result.available.join(', '));
-  process.exit(1);
+if (setupMode) {
+  console.log('\n  ◇ aya-expo-tools v2 — Setup Mode');
+  console.log('  No config specified. Starting setup wizard...');
+  console.log('  Visit http://localhost:3000/#/setup to configure.');
+} else {
+  console.log(`\n  ◇ aya-expo-tools v2 — ${config.exhibition?.name || configName}`);
 }
-
-const config = result.config;
-console.log(`\n  ◇ aya-expo-tools v2 — ${config.expo?.name || configName}`);
 
 // ── Core ───────────────────────────────────────────────────
 const core = require('./core/server');
 const { app, server } = core.createApp(config);
 
-// ── Register clusters ──────────────────────────────────────
-const clusters = {};
+// ── Setup routes (always available, even without config) ───
+require('./core/routes/setup')(app);
 
-// Always load
-clusters.equipment = require('./clusters/equipment');
-clusters.cameras = require('./clusters/cameras');
+if (setupMode) {
+  // Setup mode: serve only the wizard UI
+  console.log('  Setup routes loaded.');
+  core.start(config, { app, server });
+} else {
+  // Normal mode: register all clusters and routes
+  
+  // ── Register clusters ────────────────────────────────────
+  const clusters = {};
 
-// Conditional
-if (config.cv?.enabled !== false) {
-  clusters.cv = require('./clusters/cv');
-  clusters.data = require('./clusters/data');
+  // Always load
+  clusters.equipment = require('./clusters/equipment');
+  clusters.cameras = require('./clusters/cameras');
+
+  // Conditional
+  if (config.cv?.enabled !== false) {
+    clusters.cv = require('./clusters/cv');
+    clusters.data = require('./clusters/data');
+  }
+
+  if (config.modules?.portal?.enabled !== false) {
+    clusters.communication = require('./clusters/communication');
+  }
+
+  // Register all
+  for (const [name, cluster] of Object.entries(clusters)) {
+    console.log(`  Loading ${cluster.name}...`);
+    cluster.register(app, config, clusters);
+  }
+
+  // ── Scheduler ────────────────────────────────────────────
+  const { Scheduler } = require('./core/scheduler');
+  const scheduler = new Scheduler(config, clusters, {
+    addLogEntry: core.addLogEntry,
+    broadcast: core.broadcast
+  });
+
+  // ── Core routes ──────────────────────────────────────────
+  require('./core/routes/session')(app, { session: core.session, addLogEntry: core.addLogEntry });
+  require('./core/routes/config')(app, config);
+  require('./core/routes/health')(app, core);
+  require('./core/routes/schedule')(app, { scheduler });
+
+  // ── Start ────────────────────────────────────────────────
+  core.start(config, { app, server });
+  scheduler.start();
 }
-
-if (config.modules?.portal?.enabled !== false) {
-  clusters.communication = require('./clusters/communication');
-}
-
-// Register all
-for (const [name, cluster] of Object.entries(clusters)) {
-  console.log(`  Loading ${cluster.name}...`);
-  cluster.register(app, config, clusters);
-}
-
-// ── Scheduler ──────────────────────────────────────────────
-const { Scheduler } = require('./core/scheduler');
-const scheduler = new Scheduler(config, clusters, {
-  addLogEntry: core.addLogEntry,
-  broadcast: core.broadcast
-});
-
-// ── Core routes ────────────────────────────────────────────
-require('./core/routes/session')(app, { session: core.session, addLogEntry: core.addLogEntry });
-require('./core/routes/config')(app, config);
-require('./core/routes/health')(app, core);
-require('./core/routes/schedule')(app, { scheduler });
-
-// ── Start ──────────────────────────────────────────────────
-core.start(config, { app, server });
-scheduler.start();
