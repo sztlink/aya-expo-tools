@@ -44,9 +44,12 @@ class CVManager extends EventEmitter {
     this.enabled = !!this.cvConfig.enabled;
 
     this.processes = new Map();   // camId → { process, pid, camId }
+    this.reidProcesses = new Map(); // camId → { process, pid, camId } for ReID
     this.counterProcess = null;
     this._buffers = new Map();    // camId → string (linha parcial)
+    this._reidBuffers = new Map(); // camId → string (linha parcial ReID)
     this._cache = new Map();      // camId → último evento 'detection' recebido
+    this._reidCache = new Map();   // camId → último evento ReID
     this._readyInfo = new Map();  // camId → evento 'ready' (model, format, gpuName)
     this._configPath = null;      // definido no start()
   }
@@ -76,6 +79,15 @@ class CVManager extends EventEmitter {
       this._startDetector(camId, pythonCmd, this._configPath);
     }
 
+    // ReID processes (one per camera)
+    const reidConfig = this.cvConfig.reid || {};
+    if (reidConfig.enabled) {
+      console.log(`  🔍 ReID: iniciando ${cvCameras.length} processo(s)`);
+      for (const camId of cvCameras) {
+        this._startReid(camId, pythonCmd, this._configPath);
+      }
+    }
+
     // Visitor counter (ainda usa arquivo — não muda nesta versão)
     const counterCfg = this.cvConfig.counter;
     if (counterCfg?.enabled) {
@@ -94,6 +106,12 @@ class CVManager extends EventEmitter {
       try { entry.process.kill('SIGTERM'); } catch {}
     }
 
+    for (const [camId, entry] of this.reidProcesses) {
+      console.log(`  🔍 ReID [${camId}]: parando (PID ${entry.pid})...`);
+      pids.push(entry.pid);
+      try { entry.process.kill('SIGTERM'); } catch {}
+    }
+
     if (this.counterProcess) {
       pids.push(this.counterProcess.pid);
       try { this.counterProcess.process.kill('SIGTERM'); } catch {}
@@ -103,8 +121,13 @@ class CVManager extends EventEmitter {
       for (const [, entry] of this.processes) {
         try { entry.process.kill('SIGKILL'); } catch {}
       }
+      for (const [, entry] of this.reidProcesses) {
+        try { entry.process.kill('SIGKILL'); } catch {}
+      }
       this.processes.clear();
+      this.reidProcesses.clear();
       this._buffers.clear();
+      this._reidBuffers.clear();
       if (this.counterProcess) {
         try { this.counterProcess.process.kill('SIGKILL'); } catch {}
         this.counterProcess = null;
@@ -292,6 +315,42 @@ class CVManager extends EventEmitter {
     try { return fs.readFileSync(file); } catch { return null; }
   }
 
+  // ─── ReID API ──────────────────────────────────────────────────────────────
+
+  getReidStats() {
+    const stats = {};
+    for (const [camId, cache] of this._reidCache) {
+      stats[camId] = {
+        uniqueVisitors: cache.uniqueVisitors || 0,
+        activeIdentities: cache.activeIdentities || 0,
+        staffFiltered: cache.staffFiltered || 0,
+        timestamp: cache.timestamp || null,
+        running: this.reidProcesses.has(camId),
+        pid: this.reidProcesses.get(camId)?.pid || null,
+      };
+    }
+    return stats;
+  }
+
+  getReidToday() {
+    // Agregado cross-camera
+    const allCaches = Array.from(this._reidCache.values());
+    if (allCaches.length === 0) return null;
+
+    // Sum unique visitors across cameras (assuming reid_ids are global)
+    const totalVisitors = Math.max(...allCaches.map(c => c.uniqueVisitors || 0), 0);
+    const totalActive = allCaches.reduce((sum, c) => sum + (c.activeIdentities || 0), 0);
+    const totalStaff = Math.max(...allCaches.map(c => c.staffFiltered || 0), 0);
+
+    return {
+      uniqueVisitors: totalVisitors,
+      activeIdentities: totalActive,
+      staffFiltered: totalStaff,
+      perCamera: this.getReidStats(),
+      timestamp: new Date().toISOString(),
+    };
+  }
+
   // ─── Private: processo detector ────────────────────────────────────────────
 
   _startDetector(camId, pythonCmd, configPath) {
@@ -436,6 +495,124 @@ class CVManager extends EventEmitter {
 
       default:
         // Evento desconhecido — ignora silenciosamente
+        break;
+    }
+  }
+
+  // ─── ReID Process ──────────────────────────────────────────────────────────
+
+  _startReid(camId, pythonCmd, configPath) {
+    if (!configPath) {
+      console.log(`  🔍 ReID [${camId}]: sem config path, pulando`);
+      return;
+    }
+
+    const args = [
+      path.join(CV_DIR, 'reid.py'),
+      '--config', configPath,
+      '--camera-id', camId,
+    ];
+
+    console.log(`  🔍 ReID [${camId}]: iniciando`);
+
+    const proc = spawn(pythonCmd, args, {
+      cwd: CV_DIR,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+
+    // ─── stdout: protocolo JSONL ──────────────────────────────────────────────
+    this._reidBuffers.set(camId, '');
+
+    proc.stdout.on('data', (data) => {
+      const buf = (this._reidBuffers.get(camId) || '') + data.toString();
+      const lines = buf.split('\n');
+      this._reidBuffers.set(camId, lines.pop());
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        let event;
+        try {
+          event = JSON.parse(trimmed);
+        } catch {
+          console.log(`  🔍 [${camId}] ${trimmed}`);
+          continue;
+        }
+
+        this._handleReidEvent(camId, event);
+      }
+    });
+
+    // stderr: logs Python
+    proc.stderr.on('data', (data) => {
+      data.toString().trim().split('\n').forEach(line => {
+        if (line.trim()) console.log(`  🔍 [${camId}] ${line.trim()}`);
+      });
+    });
+
+    proc.on('exit', (code) => {
+      console.log(`  🔍 ReID [${camId}]: processo encerrado (code ${code})`);
+      this.reidProcesses.delete(camId);
+      this._reidBuffers.delete(camId);
+
+      if (this.enabled && code !== 0) {
+        console.log(`  🔍 ReID [${camId}]: reiniciando em 10s...`);
+        setTimeout(() => {
+          if (this.enabled && !this.reidProcesses.has(camId)) {
+            const py = this._findPython();
+            if (py) this._startReid(camId, py, configPath);
+          }
+        }, 10000);
+      }
+    });
+
+    this.reidProcesses.set(camId, { process: proc, pid: proc.pid, camId });
+  }
+
+  _handleReidEvent(camId, event) {
+    switch (event.event) {
+      case 'ready':
+        console.log(`  🔍 ReID [${camId}]: pronto | ${event.backend} | zonas: ${(event.sameZoneCameras || []).join(', ') || 'nenhuma'}`);
+        this.emit('reid_ready', { camId, ...event });
+        break;
+
+      case 'match':
+      case 'new_identity':
+        // Cache último evento ReID
+        if (!this._reidCache.has(camId)) {
+          this._reidCache.set(camId, { matches: [], newIdentities: [] });
+        }
+        const cache = this._reidCache.get(camId);
+        if (event.event === 'match') {
+          cache.matches.push(event);
+        } else {
+          cache.newIdentities.push(event);
+        }
+        this.emit(event.event === 'match' ? 'reid_match' : 'reid_new_identity', { camId, ...event });
+        break;
+
+      case 'status':
+        // Armazena status ReID
+        if (!this._reidCache.has(camId)) {
+          this._reidCache.set(camId, {});
+        }
+        Object.assign(this._reidCache.get(camId), {
+          uniqueVisitors: event.uniqueVisitors,
+          activeIdentities: event.activeIdentities,
+          staffFiltered: event.staffFiltered,
+          timestamp: event.timestamp,
+        });
+        this.emit('reid_status', { camId, ...event });
+        break;
+
+      case 'error':
+        console.error(`  🔍 ReID [${camId}] erro: ${event.message}`);
+        this.emit('reid_error', { camId, ...event });
+        break;
+
+      default:
         break;
     }
   }

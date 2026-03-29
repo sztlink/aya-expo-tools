@@ -120,4 +120,19 @@ module.exports = function(app, cluster) {
   app.get('/api/cv/report/:from/:to', (req, res) => {
     res.json({ ok: true, data: cvManager.getReport ? cvManager.getReport(req.params.from, req.params.to) : {} });
   });
+
+  // ─── ReID Routes ───────────────────────────────────────────────────────────
+
+  app.get('/api/reid/today', (req, res) => {
+    const data = cvManager.getReidToday();
+    if (!data) {
+      return res.status(404).json({ ok: false, error: 'No ReID data available', code: 'NO_REID_DATA' });
+    }
+    res.json({ ok: true, data });
+  });
+
+  app.get('/api/reid/stats', (req, res) => {
+    const data = cvManager.getReidStats();
+    res.json({ ok: true, data });
+  });
 };
