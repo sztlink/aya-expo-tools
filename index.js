@@ -28,7 +28,7 @@ console.log(`\n  ◇ aya-expo-tools v2 — ${config.expo?.name || configName}`);
 
 // ── Core ───────────────────────────────────────────────────
 const core = require('./core/server');
-const app = core.createApp(config);
+const { app, server } = core.createApp(config);
 
 // ── Register clusters ──────────────────────────────────────
 const clusters = {};
@@ -59,4 +59,4 @@ require('./core/routes/config')(app, config);
 require('./core/routes/health')(app, core);
 
 // ── Start ──────────────────────────────────────────────────
-core.start(config, clusters);
+core.start(config, { app, server });

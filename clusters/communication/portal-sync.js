@@ -17,10 +17,10 @@ const https = require('https')
 const http = require('http')
 const fs = require('fs')
 const path = require('path')
-const network = require('./network')
-const tv = require('./tv')
-const cvLogger = require('./cv-logger')
-const cvReport = require('./cv-report')
+const network = require('../../core/network')
+const tv = require('../equipment/tv')
+const cvLogger = require('../data/cv-logger')
+const cvReport = require('../data/cv-report')
 
 // Carrega .env local (se existir) sem dependência de dotenv
 // Formato suportado: KEY=VALUE por linha, # para comentários

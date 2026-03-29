@@ -1,6 +1,6 @@
 'use strict';
 
-const CVManager = require('./cv-manager');
+const { CVManager } = require('./cv-manager');
 
 module.exports = {
   name: 'cv',

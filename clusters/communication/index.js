@@ -1,6 +1,6 @@
 'use strict';
 
-const PortalSync = require('./portal-sync');
+const { PortalSync } = require('./portal-sync');
 
 module.exports = {
   name: 'communication',
