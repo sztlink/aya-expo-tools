@@ -10,7 +10,7 @@ const fs = require('fs')
 const path = require('path')
 
 // Script PowerShell para controlar volume via Core Audio API
-const PS_SCRIPT = path.join(__dirname, '..', 'scripts', 'audio-volume.ps1')
+const PS_SCRIPT = path.join(__dirname, '..', '..', 'scripts', 'audio-volume.ps1')
 
 // Escreve o script na primeira inicialização (sempre sobrescreve para garantir versão correta)
 function ensureScript() {
@@ -19,7 +19,7 @@ function ensureScript() {
   fs.writeFileSync(PS_SCRIPT, VOLUME_SCRIPT, 'utf8')
 }
 
-const VOLUME_SCRIPT = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'audio-volume.ps1'), 'utf8')
+const VOLUME_SCRIPT = fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'audio-volume.ps1'), 'utf8')
 
 let _cachedVolume = null
 
