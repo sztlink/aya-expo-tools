@@ -1,0 +1,43 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicholasFlye/tauri/v2/tooling/cli/schema.json",
+  "productName": "AYA Expo Tools",
+  "version": "2.1.0",
+  "identifier": "com.aya.expo-tools",
+  "build": {
+    "frontendDist": "../ui",
+    "devUrl": "http://localhost:3000",
+    "beforeDevCommand": "",
+    "beforeBuildCommand": ""
+  },
+  "app": {
+    "title": "AYA Expo Tools",
+    "windows": [
+      {
+        "title": "AYA Expo Tools",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 1024,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true,
+        "url": "http://localhost:3000"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:* ws://localhost:*; img-src 'self' data: blob:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi", "nsis"],
+    "icon": [
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": ""
+    }
+  }
+}

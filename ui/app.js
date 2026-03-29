@@ -1,5 +1,5 @@
 // AYA Expo Tools — Main App (Preact with htm)
-import { html, render, useState, useEffect, Component } from './lib/preact-standalone.module.js';
+import { html, render, useState, useEffect, useRef, useCallback, Component } from './lib/preact-standalone.module.js';
 
 // Pages (lazy loaded)
 let Dashboard, CV, SelfTest, Setup, Archive;
@@ -223,4 +223,4 @@ function App() {
 render(html`<${App} />`, document.getElementById('app'));
 
 // Export for use in components
-export { html, useState, useEffect, Component };
+export { html, useState, useEffect, useRef, useCallback, Component };
