@@ -2,7 +2,7 @@
 import { html, render, useState, useEffect, useRef, useCallback, Component } from './lib/preact-standalone.module.js';
 
 // Pages (lazy loaded)
-let Dashboard, CV, SelfTest, Setup, Archive;
+let Dashboard, CV, SelfTest, Setup, Archive, Splash;
 
 // WebSocket client with auto-reconnect
 class WSClient {
@@ -122,30 +122,82 @@ function navigateTo(path) {
 }
 
 // Navigation component
-function Nav({ currentRoute, wsConnected }) {
+function Nav({ currentRoute, wsConnected, onAboutClick }) {
   const links = [
     { path: '/dashboard', label: 'Dashboard' },
-    { path: '/cv', label: 'CV Tools' },
-    { path: '/selftest', label: 'Self-Test' },
+    { path: '/cv', label: 'CV' },
+    { path: '/selftest', label: 'Auto-Teste' },
     { path: '/setup', label: 'Setup' },
-    { path: '/archive', label: 'Archive' }
+    { path: '/archive', label: 'Arquivar' }
   ];
 
   return html`
-    <nav>
-      <a href="#/dashboard" class="logo">AYA Expo Tools</a>
-      <div class="nav-links">
+    <nav class="nav">
+      <div class="nav-left" style="display: flex; align-items: center; gap: 1rem;">
+        <!-- SZT Mark -->
+        <a href="#/dashboard" style="display: flex; align-items: center; text-decoration: none;">
+          <svg width="32" height="32" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="nav-szt-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" style="stop-color: var(--primary); stop-opacity: 1" />
+                <stop offset="100%" style="stop-color: var(--accent); stop-opacity: 1" />
+              </linearGradient>
+            </defs>
+            <polygon 
+              points="50,10 90,90 10,90" 
+              fill="url(#nav-szt-gradient)"
+              stroke="var(--primary)"
+              stroke-width="2"
+            />
+          </svg>
+        </a>
+        <a href="#/dashboard" class="nav-logo" style="font-weight: 600; font-size: 1rem; color: var(--foreground); text-decoration: none;">
+          AYA Expo Tools
+        </a>
+      </div>
+      
+      <div class="nav-items" style="display: flex; gap: 0.5rem; flex: 1;">
         ${links.map(link => html`
           <a 
             href="${'#' + link.path}"
-            class=${currentRoute === link.path ? 'active' : ''}
+            class="nav-item"
+            data-active=${currentRoute === link.path}
           >
             ${link.label}
           </a>
         `)}
       </div>
-      <div class="ws-indicator" data-connected=${wsConnected}>
-        ${wsConnected ? 'Connected' : 'Disconnected'}
+      
+      <div class="nav-right" style="display: flex; align-items: center; gap: 1rem;">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span style="
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: ${wsConnected ? 'var(--secondary)' : 'var(--destructive)'};
+            box-shadow: 0 0 8px ${wsConnected ? 'var(--secondary)' : 'var(--destructive)'};
+          "></span>
+          <span style="font-size: 0.75rem; color: var(--muted-foreground);">
+            ${wsConnected ? 'Conectado' : 'Desconectado'}
+          </span>
+        </div>
+        <button 
+          onClick=${onAboutClick}
+          style="
+            background: none;
+            border: none;
+            color: var(--muted-foreground);
+            cursor: pointer;
+            font-size: 0.875rem;
+            padding: 0.5rem;
+            transition: color var(--transition-fast);
+          "
+          onMouseOver=${(e) => e.target.style.color = 'var(--foreground)'}
+          onMouseOut=${(e) => e.target.style.color = 'var(--muted-foreground)'}
+        >
+          Sobre
+        </button>
       </div>
     </nav>
   `;
@@ -155,6 +207,17 @@ function Nav({ currentRoute, wsConnected }) {
 function App() {
   const [route, setRoute] = useState(getRoute());
   const [wsConnected, setWsConnected] = useState(false);
+  const [showSplash, setShowSplash] = useState(true);
+  const [showAbout, setShowAbout] = useState(false);
+
+  useEffect(() => {
+    // Show splash for 2 seconds on initial load
+    const splashTimer = setTimeout(() => {
+      setShowSplash(false);
+    }, 2000);
+
+    return () => clearTimeout(splashTimer);
+  }, []);
 
   useEffect(() => {
     // Router: listen to hash changes
@@ -176,29 +239,39 @@ function App() {
     const loadPages = async () => {
       try {
         if (!Dashboard) {
-          const [dash, cv, selftest, setup, archive] = await Promise.all([
+          const [dash, cv, selftest, setup, archive, splash] = await Promise.all([
             import('./pages/dashboard.js'),
             import('./pages/cv.js'),
             import('./pages/selftest.js'),
             import('./pages/setup.js'),
-            import('./pages/archive.js')
+            import('./pages/archive.js'),
+            import('./pages/splash.js')
           ]);
           Dashboard = dash.default;
           CV = cv.default;
           SelfTest = selftest.default;
           Setup = setup.default;
           Archive = archive.default;
+          Splash = splash.default;
           // Force re-render after loading
           setRoute(getRoute());
         }
       } catch (err) {
         console.error('[App] Failed to load pages:', err);
         // Show error in UI instead of infinite loading
-        document.querySelector('main').innerHTML = '<div style="color:#ff2d78;padding:2em"><h2>Erro ao carregar paginas</h2><pre>' + err.message + '</pre></div>';
+        const mainEl = document.querySelector('main');
+        if (mainEl) {
+          mainEl.innerHTML = '<div style="color:#ff2d78;padding:2em"><h2>Erro ao carregar páginas</h2><pre>' + err.message + '</pre></div>';
+        }
       }
     };
     loadPages();
   }, []);
+
+  // Render splash screen during startup
+  if (showSplash && Splash) {
+    return html`<${Splash} />`;
+  }
 
   // Render current page
   let PageComponent = null;
@@ -209,13 +282,73 @@ function App() {
   else if (route === '/archive') PageComponent = Archive;
 
   return html`
-    <${Nav} currentRoute=${route} wsConnected=${wsConnected} />
-    <main>
-      ${PageComponent 
-        ? html`<${PageComponent} />` 
-        : html`<div class="loading">Loading</div>`
-      }
-    </main>
+    <div>
+      <${Nav} 
+        currentRoute=${route} 
+        wsConnected=${wsConnected}
+        onAboutClick=${() => setShowAbout(true)}
+      />
+      <main>
+        ${PageComponent 
+          ? html`<${PageComponent} />` 
+          : html`<div class="loading">Carregando...</div>`
+        }
+      </main>
+      
+      ${showAbout && html`
+        <div class="modal-overlay" onClick=${() => setShowAbout(false)}>
+          <div class="modal" onClick=${(e) => e.stopPropagation()}>
+            <div class="modal-header">
+              <h2 class="modal-title">Sobre</h2>
+              <button class="modal-close" onClick=${() => setShowAbout(false)}>×</button>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+              <!-- SZT Mark -->
+              <div style="text-align: center;">
+                <svg width="80" height="80" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                  <defs>
+                    <linearGradient id="about-szt-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" style="stop-color: var(--primary); stop-opacity: 1" />
+                      <stop offset="100%" style="stop-color: var(--accent); stop-opacity: 1" />
+                    </linearGradient>
+                  </defs>
+                  <polygon 
+                    points="50,10 90,90 10,90" 
+                    fill="url(#about-szt-gradient)"
+                    stroke="var(--primary)"
+                    stroke-width="2"
+                  />
+                </svg>
+              </div>
+              
+              <div style="text-align: center;">
+                <h3 style="margin: 0 0 0.5rem 0; font-size: 1.5rem; font-weight: 600;">AYA Expo Tools</h3>
+                <p style="margin: 0; color: var(--muted-foreground); font-size: 0.875rem;">
+                  Versão 2.1.0
+                </p>
+              </div>
+              
+              <div style="
+                padding: 1rem;
+                background: var(--background);
+                border: 1px solid var(--border);
+                border-radius: var(--radius);
+                font-size: 0.875rem;
+                line-height: 1.6;
+              ">
+                <p style="margin: 0 0 1rem 0;">
+                  Sistema de controle e monitoramento para exposições interativas do AYA Studio.
+                </p>
+                <p style="margin: 0; color: var(--muted-foreground);">
+                  Desenvolvido com Design System ZeroFlux.<br/>
+                  © 2026 Felipe Sztutman · szt.link
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      `}
+    </div>
   `;
 }
 

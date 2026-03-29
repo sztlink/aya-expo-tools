@@ -1,266 +1,243 @@
-/**
- * AYA Expo Tools — Archive Page (Story 6)
- *
- * Archive exhibition data to external SSD with progress tracking.
- * Shows data size breakdown, available drives, and final report access.
- */
+// Archive Page — Data archiving for Ihon post-expo
+import { html, useState, useEffect } from '../app.js';
+import { authFetch } from '../app.js';
+import { Card, Button, Badge, StatusDot } from '../components/base/index.js';
 
-import { html, Component } from '../app.js';
-import Card from '../components/card.js';
+export default function Archive() {
+  const [dataSummary, setDataSummary] = useState({
+    totalSize: '0 GB',
+    timelapse: '0 GB',
+    logs: '0 MB',
+    cv: '0 GB'
+  });
+  const [drives, setDrives] = useState([]);
+  const [archiving, setArchiving] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [reportUrl, setReportUrl] = useState(null);
 
-export default class Archive extends Component {
-  constructor() {
-    super();
-    this.state = {
-      dataSize: 0,
-      breakdown: {},
-      drives: [],
-      loading: true,
-      archiving: false,
-      progress: null,
-      archiveComplete: false,
-      archivePath: null,
-      selectedDrive: null,
-      slug: null
-    };
-  }
+  useEffect(() => {
+    loadArchiveData();
+  }, []);
 
-  componentDidMount() {
-    this.loadStatus();
-    // Try to get slug from config
-    fetch('/api/config')
-      .then(r => r.json())
-      .then(config => {
-        const slug = config.exhibition?.name
-          ?.toLowerCase()
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-|-$/g, '') || 'exhibition';
-        this.setState({ slug });
-      })
-      .catch(() => this.setState({ slug: 'exhibition' }));
-  }
-
-  async loadStatus() {
+  const loadArchiveData = async () => {
     try {
-      const res = await fetch('/api/archive/status');
-      const data = await res.json();
-      this.setState({
-        dataSize: data.dataSize,
-        breakdown: data.breakdown,
-        drives: data.drives,
-        loading: false,
-        selectedDrive: data.drives[0]?.letter || null
-      });
+      const res = await authFetch('/api/archive/status');
+      if (res.ok) {
+        const data = await res.json();
+        setDataSummary(data.summary);
+        setDrives(data.drives);
+        setReportUrl(data.reportUrl);
+      }
     } catch (err) {
-      console.error('Failed to load archive status:', err);
-      this.setState({ loading: false });
+      console.error('[Archive] Failed to load data:', err);
     }
-  }
+  };
 
-  async startArchive() {
-    const { selectedDrive, slug } = this.state;
-    
-    if (!selectedDrive || !slug) {
-      alert('Please select a drive and enter a folder name');
+  const startArchive = async () => {
+    const selectedDrive = drives.find(d => d.selected);
+    if (!selectedDrive) {
+      alert('Selecione um drive para arquivar');
       return;
     }
 
-    this.setState({ archiving: true, progress: { step: 'init', percent: 0, message: 'Starting...' } });
+    if (!confirm(`Tem certeza que deseja arquivar todos os dados para ${selectedDrive.name}?`)) {
+      return;
+    }
+
+    setArchiving(true);
+    setProgress(0);
 
     try {
-      const res = await fetch('/api/archive/start', {
+      const res = await authFetch('/api/archive/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ drive: selectedDrive, slug })
+        body: JSON.stringify({ drive: selectedDrive.path })
       });
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n\n');
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const data = JSON.parse(line.slice(6));
-
-          if (data.step === 'complete') {
-            this.setState({
-              archiving: false,
-              archiveComplete: true,
-              archivePath: data.result.path,
-              progress: { step: 'done', percent: 100, message: 'Archive complete!' }
-            });
-          } else if (data.step === 'error') {
-            this.setState({
-              archiving: false,
-              progress: { step: 'error', percent: 0, message: `Error: ${data.error}` }
-            });
-            alert(`Archive failed: ${data.error}`);
-          } else {
-            this.setState({ progress: data });
+      if (res.ok) {
+        // Poll for progress
+        const interval = setInterval(async () => {
+          const progressRes = await authFetch('/api/archive/progress');
+          if (progressRes.ok) {
+            const data = await progressRes.json();
+            setProgress(data.progress);
+            
+            if (data.progress >= 100) {
+              clearInterval(interval);
+              setArchiving(false);
+              alert('Arquivamento concluído com sucesso!');
+              loadArchiveData();
+            }
           }
-        }
+        }, 1000);
       }
-
     } catch (err) {
-      console.error('Archive failed:', err);
-      this.setState({
-        archiving: false,
-        progress: { step: 'error', percent: 0, message: `Error: ${err.message}` }
-      });
-      alert(`Archive failed: ${err.message}`);
+      console.error('[Archive] Failed to start archive:', err);
+      alert('Erro ao iniciar arquivamento');
+      setArchiving(false);
     }
-  }
+  };
 
-  render() {
-    const { loading, dataSize, breakdown, drives, archiving, progress, archiveComplete, archivePath, selectedDrive, slug } = this.state;
+  const selectDrive = (drivePath) => {
+    setDrives(drives.map(d => ({
+      ...d,
+      selected: d.path === drivePath
+    })));
+  };
 
-    if (loading) {
-      return html`
-        <div>
-          <h1>Archive</h1>
-          <p style="color: var(--dimmed);">Loading archive status...</p>
-        </div>
-      `;
-    }
-
-    return html`
-      <div>
-        <h1>Archive Exhibition Data</h1>
-        <p style="color: var(--dimmed); margin-bottom: 2rem;">
-          Copy all exhibition data to external SSD for safekeeping.
+  return html`
+    <div style="padding: 2rem; max-width: 1000px; margin: 0 auto;">
+      <!-- Header -->
+      <div style="margin-bottom: 2rem;">
+        <h1 style="margin: 0 0 0.5rem 0; font-size: 2rem; font-weight: 700;">Arquivamento de Dados</h1>
+        <p style="color: var(--muted-foreground); margin: 0; font-size: 0.875rem;">
+          Transferência de dados da exposição para armazenamento externo
         </p>
-
-        <div class="grid grid-2">
-          <!-- Data Size Card -->
-          <${Card} title="Data to Archive" status="info">
-            <div style="font-size: 2.5rem; font-weight: 700; color: var(--accent); margin-bottom: 1rem;">
-              ${dataSize.toFixed(2)} MB
-            </div>
-            <div style="color: var(--dimmed); font-size: 0.9rem;">
-              <div style="margin-bottom: 0.5rem;">
-                <strong>Timelapse:</strong> ${breakdown.timelapse?.toFixed(2) || 0} MB
-              </div>
-              <div style="margin-bottom: 0.5rem;">
-                <strong>Logs:</strong> ${breakdown.logs?.toFixed(2) || 0} MB
-              </div>
-              <div style="margin-bottom: 0.5rem;">
-                <strong>CV Data:</strong> ${breakdown.cv?.toFixed(2) || 0} MB
-              </div>
-              <div>
-                <strong>Config:</strong> ${breakdown.config?.toFixed(2) || 0} MB
-              </div>
-            </div>
-          <//>
-
-          <!-- Available Drives Card -->
-          <${Card} title="Available Drives" status=${drives.length > 0 ? 'ok' : 'error'}>
-            ${drives.length === 0 ? html`
-              <p style="color: var(--dimmed);">No external drives detected.</p>
-              <p style="color: var(--dimmed); font-size: 0.85rem; margin-top: 1rem;">
-                Connect an external SSD or USB drive and refresh the page.
-              </p>
-            ` : html`
-              <div style="margin-bottom: 1rem;">
-                ${drives.map(drive => html`
-                  <div style="padding: 0.75rem; background: var(--card-bg); border: 1px solid var(--border); border-radius: 4px; margin-bottom: 0.5rem;">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                      <div>
-                        <strong>${drive.letter}:</strong> ${drive.label}
-                      </div>
-                      <div style="color: var(--dimmed); font-size: 0.85rem;">
-                        ${drive.freeGB.toFixed(2)} GB free
-                      </div>
-                    </div>
-                  </div>
-                `)}
-              </div>
-            `}
-          <//>
-        </div>
-
-        <!-- Archive Controls -->
-        ${drives.length > 0 ? html`
-          <${Card} title="Archive Settings" style="margin-top: 2rem;">
-            <div style="margin-bottom: 1.5rem;">
-              <label style="display: block; margin-bottom: 0.5rem; color: var(--dimmed); font-size: 0.9rem;">
-                Target Drive
-              </label>
-              <select
-                value=${selectedDrive}
-                onchange=${(e) => this.setState({ selectedDrive: e.target.value })}
-                style="width: 100%; padding: 0.75rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font-size: 1rem;"
-                disabled=${archiving}
-              >
-                ${drives.map(drive => html`
-                  <option value=${drive.letter}>${drive.letter}: ${drive.label} (${drive.freeGB.toFixed(2)} GB free)</option>
-                `)}
-              </select>
-            </div>
-
-            <div style="margin-bottom: 1.5rem;">
-              <label style="display: block; margin-bottom: 0.5rem; color: var(--dimmed); font-size: 0.9rem;">
-                Folder Name
-              </label>
-              <input
-                type="text"
-                value=${slug || ''}
-                oninput=${(e) => this.setState({ slug: e.target.value })}
-                placeholder="e.g., beleza-astral-2025"
-                style="width: 100%; padding: 0.75rem; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font-size: 1rem;"
-                disabled=${archiving}
-              />
-              <div style="color: var(--dimmed); font-size: 0.8rem; margin-top: 0.5rem;">
-                Data will be saved to: ${selectedDrive}:/${slug || 'exhibition'}/
-              </div>
-            </div>
-
-            ${archiving ? html`
-              <div style="margin-bottom: 1.5rem;">
-                <div style="margin-bottom: 0.5rem; color: var(--dimmed); font-size: 0.9rem;">
-                  ${progress?.message || 'Processing...'}
-                </div>
-                <div style="width: 100%; height: 8px; background: var(--card-bg); border-radius: 4px; overflow: hidden;">
-                  <div style="height: 100%; background: var(--accent); width: ${progress?.percent || 0}%; transition: width 0.3s;"></div>
-                </div>
-              </div>
-            ` : ''}
-
-            <button
-              onclick=${() => this.startArchive()}
-              disabled=${archiving || !selectedDrive || !slug}
-              style="padding: 0.75rem 2rem; background: var(--accent); color: var(--bg); border: none; border-radius: 4px; font-size: 1rem; font-weight: 600; cursor: pointer; opacity: ${archiving || !selectedDrive || !slug ? '0.5' : '1'};"
-            >
-              ${archiving ? 'Archiving...' : 'Start Archive'}
-            </button>
-
-            ${archiveComplete ? html`
-              <div style="margin-top: 1.5rem; padding: 1rem; background: var(--card-bg); border: 1px solid var(--border); border-radius: 4px;">
-                <div style="color: var(--accent); font-weight: 600; margin-bottom: 0.5rem;">
-                  ✓ Archive Complete
-                </div>
-                <div style="color: var(--dimmed); font-size: 0.9rem; margin-bottom: 1rem;">
-                  Data saved to: <strong>${archivePath}</strong>
-                </div>
-                <a
-                  href="/api/archive/report"
-                  target="_blank"
-                  style="display: inline-block; padding: 0.5rem 1.5rem; background: var(--card-bg); color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; text-decoration: none; font-size: 0.9rem;"
-                >
-                  View Final Report →
-                </a>
-              </div>
-            ` : ''}
-          <//>
-        ` : ''}
       </div>
-    `;
-  }
+
+      <!-- Data Summary -->
+      <${Card} title="📊 Resumo dos Dados" status="info" style="margin-bottom: 1.5rem;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1.5rem;">
+          <div>
+            <div style="font-size: 0.75rem; color: var(--muted-foreground); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">
+              Total
+            </div>
+            <div style="font-family: var(--font-mono); font-size: 1.75rem; font-weight: 700; color: var(--foreground);">
+              ${dataSummary.totalSize}
+            </div>
+          </div>
+          <div>
+            <div style="font-size: 0.75rem; color: var(--muted-foreground); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">
+              Timelapse
+            </div>
+            <div style="font-family: var(--font-mono); font-size: 1.75rem; font-weight: 700; color: var(--muted-foreground);">
+              ${dataSummary.timelapse}
+            </div>
+          </div>
+          <div>
+            <div style="font-size: 0.75rem; color: var(--muted-foreground); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">
+              Logs
+            </div>
+            <div style="font-family: var(--font-mono); font-size: 1.75rem; font-weight: 700; color: var(--muted-foreground);">
+              ${dataSummary.logs}
+            </div>
+          </div>
+          <div>
+            <div style="font-size: 0.75rem; color: var(--muted-foreground); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">
+              CV Data
+            </div>
+            <div style="font-family: var(--font-mono); font-size: 1.75rem; font-weight: 700; color: var(--muted-foreground);">
+              ${dataSummary.cv}
+            </div>
+          </div>
+        </div>
+      <//>
+
+      <!-- Drives -->
+      <${Card} title="💾 Drives Externos" status=${drives.length === 0 ? 'warn' : 'ok'} style="margin-bottom: 1.5rem;">
+        ${drives.length === 0 && html`
+          <div style="text-align: center; padding: 2rem; color: var(--muted-foreground);">
+            <div style="font-size: 2rem; margin-bottom: 1rem;">🔌</div>
+            <p style="margin: 0; font-size: 0.875rem;">
+              Nenhum drive externo detectado.<br/>
+              Conecte o SSD externo antes de arquivar.
+            </p>
+          </div>
+        `}
+        ${drives.length > 0 && html`
+          <div style="display: flex; flex-direction: column; gap: 1rem;">
+            ${drives.map(drive => html`
+              <div 
+                onClick=${() => selectDrive(drive.path)}
+                style="
+                  padding: 1rem;
+                  border: 2px solid ${drive.selected ? 'var(--primary)' : 'var(--border)'};
+                  border-radius: var(--radius);
+                  background: ${drive.selected ? 'rgba(168, 85, 247, 0.1)' : 'var(--background)'};
+                  cursor: pointer;
+                  transition: all var(--transition-fast);
+                "
+              >
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                  <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <${StatusDot} status=${drive.status} />
+                    <span style="font-weight: 600; font-size: 1rem;">${drive.name}</span>
+                  </div>
+                  ${drive.selected && html`<${Badge} label="SELECIONADO" variant="primary" />`}
+                </div>
+                <div style="display: flex; gap: 1.5rem; font-size: 0.875rem; font-family: var(--font-mono); color: var(--muted-foreground);">
+                  <span>Livre: ${drive.freeSpace}</span>
+                  <span>Total: ${drive.totalSpace}</span>
+                  <span>${drive.path}</span>
+                </div>
+              </div>
+            `)}
+          </div>
+        `}
+      <//>
+
+      <!-- Archive Button -->
+      <div style="margin-bottom: 1.5rem;">
+        <${Button}
+          label=${archiving ? 'Arquivando...' : '📦 Arquivar para SSD'}
+          variant="primary"
+          onClick=${startArchive}
+          disabled=${archiving || drives.length === 0 || !drives.some(d => d.selected)}
+          loading=${archiving}
+          style="width: 100%; font-size: 1rem; padding: 1rem 2rem;"
+        />
+        
+        ${archiving && html`
+          <div style="margin-top: 1rem;">
+            <div style="height: 8px; background: var(--muted); border-radius: 999px; overflow: hidden;">
+              <div style="
+                height: 100%;
+                background: linear-gradient(90deg, var(--primary), var(--accent));
+                width: ${progress}%;
+                transition: width 300ms ease;
+              "></div>
+            </div>
+            <div style="text-align: center; margin-top: 0.5rem; font-size: 0.875rem; font-family: var(--font-mono); color: var(--muted-foreground);">
+              ${progress}% concluído
+            </div>
+          </div>
+        `}
+      </div>
+
+      <!-- Report -->
+      ${reportUrl && html`
+        <${Card} title="📄 Relatório Final" status="ok">
+          <div style="text-align: center; padding: 1rem;">
+            <p style="margin: 0 0 1rem 0; color: var(--muted-foreground); font-size: 0.875rem;">
+              O relatório final da exposição está disponível para download
+            </p>
+            <${Button}
+              label="📥 Baixar Relatório"
+              variant="secondary"
+              onClick=${() => window.open(reportUrl, '_blank')}
+            />
+          </div>
+        <//>
+      `}
+
+      <!-- Help Text -->
+      <div style="
+        margin-top: 2rem;
+        padding: 1rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--card);
+        font-size: 0.875rem;
+        color: var(--muted-foreground);
+        line-height: 1.6;
+      ">
+        <strong style="color: var(--foreground);">ℹ️ Instruções:</strong><br/>
+        1. Conecte o SSD externo à porta USB 3.0<br/>
+        2. Aguarde o drive ser detectado automaticamente<br/>
+        3. Selecione o drive desejado clicando nele<br/>
+        4. Clique em "Arquivar para SSD" para iniciar a transferência<br/>
+        5. Não desconecte o drive até o processo terminar
+      </div>
+    </div>
+  `;
 }

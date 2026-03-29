@@ -1,290 +1,236 @@
-// Dashboard page — Main overview (Story 4-2)
-import { html, useState, useEffect, ws, authFetch } from '../app.js';
-import Card from '../components/card.js';
-import StatusDot from '../components/status-dot.js';
-import Badge from '../components/badge.js';
+// Dashboard Page — Leonardo's daily operational view
+import { html, useState, useEffect } from '../app.js';
+import { ws, authFetch } from '../app.js';
+import { Card, Badge, StatusDot, Button } from '../components/base/index.js';
+import { ClusterCard } from '../components/composed/index.js';
 
 export default function Dashboard() {
-  const [health, setHealth] = useState(null);
-  const [schedule, setSchedule] = useState(null);
-  const [clusters, setClusters] = useState({
-    equipment: { healthy: false, details: {} },
-    cameras: { healthy: false, details: {} },
-    cv: { healthy: false, details: {} },
-    data: { healthy: false, details: {} },
-    communication: { healthy: false, details: {} }
+  const [expoData, setExpoData] = useState(null);
+  const [clusterStatus, setClusterStatus] = useState({
+    equipment: { status: 'info', metrics: [] },
+    cameras: { status: 'info', metrics: [] },
+    cv: { status: 'info', metrics: [] },
+    data: { status: 'info', metrics: [] },
+    communication: { status: 'info', metrics: [] }
   });
-  const [loading, setLoading] = useState(true);
+  const [serverHealth, setServerHealth] = useState({
+    cpu: 0,
+    gpu: 0,
+    disk: 0,
+    ram: 0
+  });
+  const [loading, setLoading] = useState(false);
 
-  // Fetch initial state
+  // Load initial data
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [healthRes, scheduleRes] = await Promise.all([
-          fetch('/api/health'), // Public endpoint, no auth needed
-          authFetch('/api/schedule')
-        ]);
-        
-        const healthData = await healthRes.json();
-        const scheduleData = await scheduleRes.json();
-        
-        setHealth(healthData);
-        setSchedule(scheduleData.data);
-        setLoading(false);
-      } catch (err) {
-        console.error('Failed to fetch dashboard data:', err);
-        setLoading(false);
-      }
-    };
-    
-    fetchData();
+    loadDashboardData();
   }, []);
 
-  // Listen to WebSocket updates
+  // WebSocket updates
   useEffect(() => {
-    const handleHealthUpdate = (data) => {
-      if (data.health) setHealth(data.health);
-    };
-
-    const handleScheduleUpdate = (data) => {
-      if (data.schedule) setSchedule(data.schedule);
-    };
-
-    const handleCvUpdate = (data) => {
-      if (health && data.count !== undefined) {
-        setHealth({ ...health, cv: { ...health.cv, count: data.count } });
+    const handleUpdate = (data) => {
+      if (data.type === 'cluster_status') {
+        setClusterStatus(data.clusters || clusterStatus);
+      }
+      if (data.type === 'server_health') {
+        setServerHealth(data.health || serverHealth);
+      }
+      if (data.type === 'expo_status') {
+        setExpoData(data.expo || expoData);
       }
     };
 
-    ws.on('health', handleHealthUpdate);
-    ws.on('schedule', handleScheduleUpdate);
-    ws.on('cv-update', handleCvUpdate);
+    ws.on('cluster_status', handleUpdate);
+    ws.on('server_health', handleUpdate);
+    ws.on('expo_status', handleUpdate);
 
     return () => {
-      ws.off('health', handleHealthUpdate);
-      ws.off('schedule', handleScheduleUpdate);
-      ws.off('cv-update', handleCvUpdate);
+      ws.off('cluster_status', handleUpdate);
+      ws.off('server_health', handleUpdate);
+      ws.off('expo_status', handleUpdate);
     };
-  }, [health]);
+  }, []);
 
-  // Execute open/close
-  const handleOpen = async () => {
+  const loadDashboardData = async () => {
     try {
-      const res = await authFetch('/api/schedule/open', { method: 'POST' });
-      const data = await res.json();
-      if (data.ok) {
-        alert('Exhibition opened');
-        // Refresh schedule
-        const scheduleRes = await authFetch('/api/schedule');
-        const scheduleData = await scheduleRes.json();
-        setSchedule(scheduleData.data);
-      } else {
-        alert(`Failed to open: ${data.error}`);
+      const res = await authFetch('/api/dashboard');
+      if (res.ok) {
+        const data = await res.json();
+        setExpoData(data.expo);
+        setClusterStatus(data.clusters || clusterStatus);
+        setServerHealth(data.serverHealth || serverHealth);
       }
     } catch (err) {
-      alert(`Failed to open: ${err.message}`);
+      console.error('[Dashboard] Failed to load data:', err);
     }
   };
 
-  const handleClose = async () => {
+  const handleOpenExpo = async () => {
+    if (!confirm('Tem certeza que deseja abrir a exposição?')) return;
+    setLoading(true);
     try {
-      const res = await authFetch('/api/schedule/close', { method: 'POST' });
-      const data = await res.json();
-      if (data.ok) {
-        alert('Exhibition closed');
-        // Refresh schedule
-        const scheduleRes = await authFetch('/api/schedule');
-        const scheduleData = await scheduleRes.json();
-        setSchedule(scheduleData.data);
-      } else {
-        alert(`Failed to close: ${data.error}`);
+      const res = await authFetch('/api/expo/open', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setExpoData(data.expo);
       }
     } catch (err) {
-      alert(`Failed to close: ${err.message}`);
+      console.error('[Dashboard] Failed to open expo:', err);
+      alert('Erro ao abrir exposição');
+    } finally {
+      setLoading(false);
     }
   };
 
-  if (loading) {
+  const handleCloseExpo = async () => {
+    if (!confirm('Tem certeza que deseja fechar a exposição?')) return;
+    setLoading(true);
+    try {
+      const res = await authFetch('/api/expo/close', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setExpoData(data.expo);
+      }
+    } catch (err) {
+      console.error('[Dashboard] Failed to close expo:', err);
+      alert('Erro ao fechar exposição');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!expoData) {
     return html`
-      <div>
-        <h1>Dashboard</h1>
-        <p style="color: var(--dimmed);">Loading...</p>
+      <div style="padding: 2rem; text-align: center;">
+        <p style="color: var(--muted-foreground);">Carregando dashboard...</p>
       </div>
     `;
   }
 
-  // Determine cluster statuses
-  const equipmentStatus = health?.projectors > 0 || health?.tvs > 0 ? 'ok' : 'warn';
-  const camerasStatus = health?.cameras > 0 ? 'ok' : 'warn';
-  const cvStatus = health?.cv?.running ? 'ok' : (health?.cv?.enabled ? 'warn' : 'error');
-  const dataStatus = 'ok'; // Assume ok if CV is enabled
-  const commStatus = health?.internet ? 'ok' : 'error';
+  const isOpen = expoData.status === 'aberta';
+  const statusVariant = isOpen ? 'success' : 'muted';
 
   return html`
-    <div>
-      <h1>Dashboard</h1>
-      <p style="color: var(--dimmed); margin-bottom: 2rem;">
-        System overview and exhibition health monitoring.
-      </p>
-
-      <!-- Quick Actions -->
-      <div style="display: flex; gap: 1rem; margin-bottom: 2rem;">
-        <button 
-          class="btn btn-primary" 
-          style="flex: 1; padding: 1rem; font-size: 1.1em;"
-          onClick=${handleOpen}
-        >
-          ▶ Open Exhibition
-        </button>
-        <button 
-          class="btn btn-secondary" 
-          style="flex: 1; padding: 1rem; font-size: 1.1em;"
-          onClick=${handleClose}
-        >
-          ⏸ Close Exhibition
-        </button>
-      </div>
-
-      <!-- Schedule Info -->
-      ${schedule && html`
-        <${Card} title="Schedule" status=${schedule.enabled ? 'ok' : 'warn'}>
-          <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-            <div>
-              <strong>Status:</strong> ${schedule.enabled ? 'Enabled' : 'Disabled'}
-            </div>
-            ${schedule.today && html`
-              <div>
-                <strong>Today:</strong> 
-                ${schedule.today.open ? `Open at ${schedule.today.open}` : 'No schedule'}
-                ${schedule.today.close ? ` → Close at ${schedule.today.close}` : ''}
-              </div>
-            `}
-            ${schedule.nextEvent && html`
-              <div>
-                <strong>Next Event:</strong> ${schedule.nextEvent.action} at ${schedule.nextEvent.time}
-              </div>
-            `}
+    <div style="padding: 2rem; max-width: 1400px; margin: 0 auto;">
+      <!-- Header -->
+      <div style="margin-bottom: 2rem;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+          <div style="display: flex; align-items: center; gap: 1rem;">
+            <h1 style="margin: 0; font-size: 2rem; font-weight: 700;">${expoData.name || 'Exposição'}</h1>
+            <${Badge} label=${isOpen ? 'ABERTA' : 'FECHADA'} variant=${statusVariant} />
           </div>
-        <//>
-      `}
-
-      <!-- Quick Stats -->
-      <div class="grid grid-3" style="margin: 2rem 0;">
-        <${Card} title="Projectors" status="info">
-          <div style="font-size: 2.5rem; font-weight: 700; color: var(--cyan);">
-            ${health?.projectors || 0}
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <${StatusDot} 
+              status=${isOpen ? 'ok' : 'warn'} 
+              label=${isOpen ? 'Em Operação' : 'Fechada'} 
+              pulse=${isOpen}
+            />
           </div>
-        <//>
-        
-        <${Card} title="Cameras" status="info">
-          <div style="font-size: 2.5rem; font-weight: 700; color: var(--cyan);">
-            ${health?.cameras || 0}
-          </div>
-        <//>
-        
-        <${Card} title="Visitors Today" status="info">
-          <div style="font-size: 2.5rem; font-weight: 700; color: var(--cyan);">
-            ${health?.cv?.count ?? '—'}
-          </div>
-        <//>
-      </div>
-
-      <!-- Cluster Status Cards -->
-      <h2 style="margin-top: 2rem; margin-bottom: 1rem;">Cluster Status</h2>
-      <div class="grid grid-2">
-        <${Card} title="Equipment" status=${equipmentStatus}>
-          <${StatusDot} status=${equipmentStatus} label="Equipment Cluster" />
-          <div style="margin-top: 0.75rem; font-size: 0.9rem; color: var(--dimmed);">
-            ${health?.projectors || 0} projectors, ${health?.tvs || 0} TVs
-          </div>
-        <//>
-
-        <${Card} title="Cameras" status=${camerasStatus}>
-          <${StatusDot} status=${camerasStatus} label="Camera Cluster" />
-          <div style="margin-top: 0.75rem; font-size: 0.9rem; color: var(--dimmed);">
-            ${health?.cameras || 0} cameras active
-          </div>
-        <//>
-
-        <${Card} title="Computer Vision" status=${cvStatus}>
-          <${StatusDot} status=${cvStatus} label=${health?.cv?.running ? 'CV Running' : 'CV Stopped'} />
-          <div style="margin-top: 0.75rem; font-size: 0.9rem; color: var(--dimmed);">
-            ${health?.cv?.count ?? 0} detections
-          </div>
-        <//>
-
-        <${Card} title="Data & Logging" status=${dataStatus}>
-          <${StatusDot} status=${dataStatus} label="Data Cluster" />
-          <div style="margin-top: 0.75rem; font-size: 0.9rem; color: var(--dimmed);">
-            Logging active
-          </div>
-        <//>
-
-        <${Card} title="Communication" status=${commStatus}>
-          <${StatusDot} status=${commStatus} label=${health?.internet ? 'Online' : 'Offline'} />
-          <div style="margin-top: 0.75rem; font-size: 0.9rem; color: var(--dimmed);">
-            ${health?.internet ? 'Portal sync active' : 'No internet connection'}
-          </div>
-        <//>
-      </div>
-
-      <!-- Server Health -->
-      ${health?.server && html`
-        <h2 style="margin-top: 2rem; margin-bottom: 1rem;">Server Health</h2>
-        <div class="grid grid-2">
-          ${health.server.gpus && health.server.gpus.length > 0 && html`
-            <${Card} title="GPU" status=${health.server.gpus[0].temp < 80 ? 'ok' : 'warn'}>
-              <div>
-                <div style="font-size: 1.5rem; font-weight: 600;">
-                  ${health.server.gpus[0].temp}°C
-                </div>
-                <div style="font-size: 0.9rem; color: var(--dimmed); margin-top: 0.5rem;">
-                  ${health.server.gpus[0].util}% utilization
-                </div>
-              </div>
-            <//>
-          `}
-
-          ${health.server.cpu && html`
-            <${Card} title="CPU" status=${health.server.cpu.usage < 80 ? 'ok' : 'warn'}>
-              <div>
-                <div style="font-size: 1.5rem; font-weight: 600;">
-                  ${health.server.cpu.usage}%
-                </div>
-                <div style="font-size: 0.9rem; color: var(--dimmed); margin-top: 0.5rem;">
-                  ${health.server.cpu.temp}°C
-                </div>
-              </div>
-            <//>
-          `}
-
-          ${health.server.ram && html`
-            <${Card} title="RAM" status=${health.server.ram.usedPercent < 80 ? 'ok' : 'warn'}>
-              <div>
-                <div style="font-size: 1.5rem; font-weight: 600;">
-                  ${health.server.ram.usedPercent}%
-                </div>
-                <div style="font-size: 0.9rem; color: var(--dimmed); margin-top: 0.5rem;">
-                  ${health.server.ram.usedGB}GB / ${health.server.ram.totalGB}GB
-                </div>
-              </div>
-            <//>
-          `}
-
-          ${health.server.disk && html`
-            <${Card} title="Disk Space" status=${health.server.disk.usedPercent < 90 ? 'ok' : 'warn'}>
-              <div>
-                <div style="font-size: 1.5rem; font-weight: 600;">
-                  ${health.server.disk.freeGB}GB free
-                </div>
-                <div style="font-size: 0.9rem; color: var(--dimmed); margin-top: 0.5rem;">
-                  ${health.server.disk.usedPercent}% used
-                </div>
-              </div>
-            <//>
-          `}
         </div>
-      `}
+        <p style="color: var(--muted-foreground); margin: 0; font-size: 0.875rem;">
+          ${expoData.location || 'Local não definido'} · ${expoData.period || 'Período não definido'}
+        </p>
+      </div>
+
+      <!-- Quick Action Bar -->
+      <${Card} className="quick-actions" style="margin-bottom: 2rem;">
+        <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+          <${Button}
+            label="🟢 Abrir Exposição"
+            variant=${isOpen ? 'secondary' : 'primary'}
+            onClick=${handleOpenExpo}
+            disabled=${loading || isOpen}
+            loading=${loading}
+            className="btn-large"
+            style="flex: 1; min-width: 200px; font-size: 1rem; padding: 1rem 1.5rem;"
+          />
+          <${Button}
+            label="🔴 Fechar Exposição"
+            variant="destructive"
+            onClick=${handleCloseExpo}
+            disabled=${loading || !isOpen}
+            loading=${loading}
+            className="btn-large"
+            style="flex: 1; min-width: 200px; font-size: 1rem; padding: 1rem 1.5rem;"
+          />
+          <div style="flex: 1; min-width: 200px; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card);">
+            <div style="font-size: 0.75rem; color: var(--muted-foreground); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem;">
+              Próximo Evento Automático
+            </div>
+            <div style="font-family: var(--font-mono); font-weight: 600; font-size: 0.875rem;">
+              ${expoData.nextEvent || 'Nenhum agendado'}
+            </div>
+          </div>
+        </div>
+      <//>
+
+      <!-- Cluster Grid -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+        <${ClusterCard}
+          name="Equipamentos"
+          status=${clusterStatus.equipment.status}
+          icon="🎬"
+          metrics=${clusterStatus.equipment.metrics}
+          onClick=${() => location.hash = '/selftest'}
+        />
+        <${ClusterCard}
+          name="Câmeras"
+          status=${clusterStatus.cameras.status}
+          icon="📹"
+          metrics=${clusterStatus.cameras.metrics}
+          onClick=${() => location.hash = '/selftest'}
+        />
+        <${ClusterCard}
+          name="Visão Computacional"
+          status=${clusterStatus.cv.status}
+          icon="👁️"
+          metrics=${clusterStatus.cv.metrics}
+          onClick=${() => location.hash = '/cv'}
+        />
+        <${ClusterCard}
+          name="Dados"
+          status=${clusterStatus.data.status}
+          icon="💾"
+          metrics=${clusterStatus.data.metrics}
+          onClick=${() => location.hash = '/archive'}
+        />
+        <${ClusterCard}
+          name="Comunicação"
+          status=${clusterStatus.communication.status}
+          icon="🔗"
+          metrics=${clusterStatus.communication.metrics}
+        />
+      </div>
+
+      <!-- Server Health Bar -->
+      <${Card} title="Saúde do Servidor" status=${serverHealth.cpu > 90 || serverHealth.gpu > 85 ? 'error' : serverHealth.cpu > 70 ? 'warn' : 'ok'}>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem;">
+          <div>
+            <div style="font-size: 0.75rem; color: var(--muted-foreground); margin-bottom: 0.25rem;">CPU</div>
+            <div style="font-family: var(--font-mono); font-size: 1.5rem; font-weight: 700; color: ${serverHealth.cpu > 90 ? 'var(--destructive)' : serverHealth.cpu > 70 ? 'var(--operacional)' : 'var(--secondary)'};">
+              ${serverHealth.cpu}%
+            </div>
+          </div>
+          <div>
+            <div style="font-size: 0.75rem; color: var(--muted-foreground); margin-bottom: 0.25rem;">GPU Temp</div>
+            <div style="font-family: var(--font-mono); font-size: 1.5rem; font-weight: 700; color: ${serverHealth.gpu > 85 ? 'var(--destructive)' : serverHealth.gpu > 75 ? 'var(--operacional)' : 'var(--secondary)'};">
+              ${serverHealth.gpu}°C
+            </div>
+          </div>
+          <div>
+            <div style="font-size: 0.75rem; color: var(--muted-foreground); margin-bottom: 0.25rem;">Disco</div>
+            <div style="font-family: var(--font-mono); font-size: 1.5rem; font-weight: 700; color: ${serverHealth.disk > 90 ? 'var(--destructive)' : serverHealth.disk > 80 ? 'var(--operacional)' : 'var(--secondary)'};">
+              ${serverHealth.disk}%
+            </div>
+          </div>
+          <div>
+            <div style="font-size: 0.75rem; color: var(--muted-foreground); margin-bottom: 0.25rem;">RAM</div>
+            <div style="font-family: var(--font-mono); font-size: 1.5rem; font-weight: 700; color: ${serverHealth.ram > 90 ? 'var(--destructive)' : serverHealth.ram > 80 ? 'var(--operacional)' : 'var(--secondary)'};">
+              ${serverHealth.ram}%
+            </div>
+          </div>
+        </div>
+      <//>
     </div>
   `;
 }

@@ -1,325 +1,266 @@
-// Self-Test page — System diagnostics (Story 4-4)
-import { html, useState, useEffect, authFetch } from '../app.js';
-import Card from '../components/card.js';
-import StatusDot from '../components/status-dot.js';
+// SelfTest Page — Equipment health checks for Leonardo
+import { html, useState, useEffect } from '../app.js';
+import { authFetch } from '../app.js';
+import { Card, StatusDot, Button, Badge } from '../components/base/index.js';
+import { SelftestItem } from '../components/composed/index.js';
 
 export default function SelfTest() {
-  const [health, setHealth] = useState(null);
-  const [checks, setChecks] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [checks, setChecks] = useState({
+    equipamentos: [],
+    cameras: [],
+    cv: [],
+    comunicacao: [],
+    servidor: []
+  });
+  const [overallStatus, setOverallStatus] = useState('info');
   const [running, setRunning] = useState(false);
-  const [overallStatus, setOverallStatus] = useState('ok');
+  const [lastRun, setLastRun] = useState(null);
 
-  // Fetch health data
-  const fetchHealth = async () => {
+  useEffect(() => {
+    loadChecks();
+  }, []);
+
+  const loadChecks = async () => {
+    try {
+      const res = await authFetch('/api/selftest');
+      if (res.ok) {
+        const data = await res.json();
+        setChecks(data.checks);
+        setOverallStatus(data.overallStatus);
+        setLastRun(data.lastRun);
+      }
+    } catch (err) {
+      console.error('[SelfTest] Failed to load checks:', err);
+    }
+  };
+
+  const runAllChecks = async () => {
     setRunning(true);
     try {
-      const res = await fetch('/api/health');
-      const data = await res.json();
-      setHealth(data);
-      
-      // Build check list
-      const checkList = [];
-      
-      // Projectors
-      if (data.projectors > 0) {
-        for (let i = 1; i <= data.projectors; i++) {
-          checkList.push({
-            name: `Projector ${i} (PJLink)`,
-            status: 'ok', // Assume ok if listed
-            category: 'equipment'
-          });
-        }
-      } else {
-        checkList.push({
-          name: 'Projectors',
-          status: 'warn',
-          message: 'No projectors configured',
-          category: 'equipment'
-        });
+      const res = await authFetch('/api/selftest/run', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setChecks(data.checks);
+        setOverallStatus(data.overallStatus);
+        setLastRun(new Date().toISOString());
       }
-      
-      // Cameras
-      if (data.cameras > 0) {
-        for (let i = 1; i <= data.cameras; i++) {
-          checkList.push({
-            name: `Camera ${i} (RTSP)`,
-            status: 'ok', // Assume ok if listed
-            category: 'cameras'
-          });
-        }
-      } else {
-        checkList.push({
-          name: 'Cameras',
-          status: 'warn',
-          message: 'No cameras configured',
-          category: 'cameras'
-        });
-      }
-      
-      // Smart Plugs
-      // We need to check if smart plugs are configured
-      // For now, we'll add a placeholder check
-      checkList.push({
-        name: 'Smart Plugs (Tuya)',
-        status: 'ok', // Assume ok
-        message: 'Smart plugs accessible',
-        category: 'equipment'
-      });
-      
-      // CV Running
-      checkList.push({
-        name: 'Computer Vision',
-        status: data.cv?.running ? 'ok' : (data.cv?.enabled ? 'warn' : 'error'),
-        message: data.cv?.running ? 'CV running' : (data.cv?.enabled ? 'CV enabled but not running' : 'CV disabled'),
-        category: 'cv'
-      });
-      
-      // Portal Sync
-      checkList.push({
-        name: 'Portal Sync',
-        status: data.internet ? 'ok' : 'error',
-        message: data.internet ? 'Internet connected' : 'No internet connection',
-        category: 'communication'
-      });
-      
-      // Server health checks
-      if (data.server) {
-        // Disk Space
-        checkList.push({
-          name: 'Disk Space',
-          status: data.server.disk?.usedPercent < 90 ? 'ok' : 'warn',
-          message: `${data.server.disk?.freeGB}GB free (${data.server.disk?.usedPercent}% used)`,
-          category: 'server'
-        });
-        
-        // GPU Temperature
-        if (data.server.gpus && data.server.gpus.length > 0) {
-          data.server.gpus.forEach((gpu, i) => {
-            checkList.push({
-              name: `GPU ${i + 1} Temperature`,
-              status: gpu.temp < 80 ? 'ok' : (gpu.temp < 90 ? 'warn' : 'error'),
-              message: `${gpu.temp}°C (${gpu.util}% util)`,
-              category: 'server'
-            });
-          });
-        }
-        
-        // CPU Load
-        if (data.server.cpu) {
-          checkList.push({
-            name: 'CPU Load',
-            status: data.server.cpu.usage < 80 ? 'ok' : 'warn',
-            message: `${data.server.cpu.usage}% usage (${data.server.cpu.temp}°C)`,
-            category: 'server'
-          });
-        }
-        
-        // RAM Usage
-        if (data.server.ram) {
-          checkList.push({
-            name: 'RAM Usage',
-            status: data.server.ram.usedPercent < 80 ? 'ok' : 'warn',
-            message: `${data.server.ram.usedGB}GB / ${data.server.ram.totalGB}GB (${data.server.ram.usedPercent}%)`,
-            category: 'server'
-          });
-        }
-        
-        // Resolume
-        if (data.server.resolume) {
-          checkList.push({
-            name: 'Resolume Arena',
-            status: data.server.resolume.running ? 'ok' : 'error',
-            message: data.server.resolume.running ? `Running (${data.server.resolume.cpu}% CPU)` : 'Not running',
-            category: 'server'
-          });
-        }
-      }
-      
-      // Schedule
-      checkList.push({
-        name: 'Scheduler',
-        status: data.schedule ? 'ok' : 'warn',
-        message: data.schedule ? 'Scheduler enabled' : 'Scheduler disabled',
-        category: 'system'
-      });
-      
-      // Overall uptime
-      checkList.push({
-        name: 'System Uptime',
-        status: 'ok',
-        message: `${Math.floor(data.uptime / 60)} minutes`,
-        category: 'system'
-      });
-      
-      setChecks(checkList);
-      
-      // Determine overall status
-      const hasError = checkList.some(c => c.status === 'error');
-      const hasWarn = checkList.some(c => c.status === 'warn');
-      setOverallStatus(hasError ? 'error' : (hasWarn ? 'warn' : 'ok'));
-      
     } catch (err) {
-      console.error('Failed to fetch health data:', err);
-      setOverallStatus('error');
-      setChecks([{
-        name: 'Health Check',
-        status: 'error',
-        message: `Failed to fetch health data: ${err.message}`,
-        category: 'system'
-      }]);
+      console.error('[SelfTest] Failed to run checks:', err);
+      alert('Erro ao executar verificações');
     } finally {
-      setLoading(false);
       setRunning(false);
     }
   };
 
-  // Initial fetch
-  useEffect(() => {
-    fetchHealth();
-  }, []);
-
-  // Re-run handler
-  const handleRerun = () => {
-    fetchHealth();
+  const getStatusMessage = () => {
+    switch (overallStatus) {
+      case 'ok': return '✅ Tudo Funcionando';
+      case 'warn': return '⚠️ Atenção Necessária';
+      case 'error': return '❌ Problemas Detectados';
+      default: return 'ℹ️ Aguardando Verificação';
+    }
   };
 
-  if (loading) {
-    return html`
-      <div>
-        <h1>Self-Test</h1>
-        <p style="color: var(--dimmed);">Running diagnostics...</p>
-      </div>
-    `;
-  }
+  const getStatusColor = () => {
+    switch (overallStatus) {
+      case 'ok': return 'var(--secondary)';
+      case 'warn': return 'var(--operacional)';
+      case 'error': return 'var(--destructive)';
+      default: return 'var(--muted-foreground)';
+    }
+  };
 
-  // Group checks by category
-  const groupedChecks = checks.reduce((acc, check) => {
-    if (!acc[check.category]) acc[check.category] = [];
-    acc[check.category].push(check);
-    return acc;
-  }, {});
-
-  const categoryNames = {
-    equipment: 'Equipment',
-    cameras: 'Cameras',
-    cv: 'Computer Vision',
-    communication: 'Communication',
-    server: 'Server Health',
-    system: 'System'
+  const countByStatus = (items) => {
+    return {
+      ok: items.filter(i => i.status === 'ok').length,
+      warn: items.filter(i => i.status === 'warn').length,
+      error: items.filter(i => i.status === 'error').length
+    };
   };
 
   return html`
-    <div>
-      <h1>Self-Test</h1>
-      <p style="color: var(--dimmed); margin-bottom: 2rem;">
-        Automated system diagnostics and health checks.
-      </p>
-
-      <!-- Overall Status Banner -->
-      <div 
-        style=${{
-          padding: '1.5rem',
-          marginBottom: '2rem',
-          borderRadius: '8px',
-          backgroundColor: overallStatus === 'ok' ? 'rgba(0, 217, 255, 0.1)' : (overallStatus === 'warn' ? 'rgba(255, 187, 0, 0.1)' : 'rgba(255, 85, 127, 0.1)'),
-          border: `2px solid ${overallStatus === 'ok' ? 'var(--cyan)' : (overallStatus === 'warn' ? 'var(--orange)' : 'var(--red)')}`
-        }}
-      >
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-          <div>
-            <h2 style="margin: 0; margin-bottom: 0.5rem;">
-              ${overallStatus === 'ok' ? '✅ All Systems Operational' : (overallStatus === 'warn' ? '⚠️ Some Issues Detected' : '❌ Critical Issues Detected')}
-            </h2>
-            <p style="margin: 0; color: var(--dimmed);">
-              ${checks.length} checks performed
-            </p>
-          </div>
-          <button 
-            class="btn btn-primary"
-            onClick=${handleRerun}
-            disabled=${running}
-          >
-            ${running ? 'Running...' : '🔄 Re-run Tests'}
-          </button>
-        </div>
+    <div style="padding: 2rem; max-width: 1200px; margin: 0 auto;">
+      <!-- Header -->
+      <div style="margin-bottom: 2rem;">
+        <h1 style="margin: 0 0 0.5rem 0; font-size: 2rem; font-weight: 700;">Auto-Diagnóstico</h1>
+        <p style="color: var(--muted-foreground); margin: 0; font-size: 0.875rem;">
+          Verificação automática de todos os sistemas da exposição
+        </p>
       </div>
 
-      <!-- Check List by Category -->
-      ${Object.entries(groupedChecks).map(([category, categoryChecks]) => html`
-        <div key=${category} style="margin-bottom: 2rem;">
-          <h2 style="margin-bottom: 1rem;">${categoryNames[category] || category}</h2>
-          <${Card} title=${categoryNames[category] || category} status="info">
-            <div style="display: flex; flex-direction: column; gap: 0.75rem;">
-              ${categoryChecks.map((check, i) => html`
-                <div 
-                  key=${i}
-                  style=${{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '0.75rem',
-                    borderRadius: '4px',
-                    backgroundColor: 'rgba(255, 255, 255, 0.02)'
-                  }}
-                >
-                  <div style="flex: 1;">
-                    <div style="font-weight: 600; margin-bottom: 0.25rem;">
-                      ${check.name}
-                    </div>
-                    ${check.message && html`
-                      <div style="font-size: 0.85rem; color: var(--dimmed);">
-                        ${check.message}
-                      </div>
-                    `}
-                  </div>
-                  <div>
-                    <${StatusDot} 
-                      status=${check.status} 
-                      label=${check.status === 'ok' ? 'Pass' : (check.status === 'warn' ? 'Warning' : 'Fail')}
-                    />
-                  </div>
-                </div>
+      <!-- Overall Status Banner -->
+      <div style="
+        padding: 2rem;
+        margin-bottom: 2rem;
+        border-radius: var(--radius);
+        background: var(--card);
+        border: 2px solid ${getStatusColor()};
+        text-align: center;
+      ">
+        <div style="font-size: 2rem; font-weight: 700; color: ${getStatusColor()}; margin-bottom: 0.5rem;">
+          ${getStatusMessage()}
+        </div>
+        ${lastRun && html`
+          <div style="font-size: 0.875rem; color: var(--muted-foreground); font-family: var(--font-mono);">
+            Última verificação: ${new Date(lastRun).toLocaleString('pt-BR')}
+          </div>
+        `}
+      </div>
+
+      <!-- Action Button -->
+      <div style="margin-bottom: 2rem; text-align: center;">
+        <${Button}
+          label=${running ? 'Verificando...' : '🔄 Verificar Novamente'}
+          variant="primary"
+          onClick=${runAllChecks}
+          disabled=${running}
+          loading=${running}
+          style="font-size: 1rem; padding: 1rem 2rem;"
+        />
+      </div>
+
+      <!-- Check Groups -->
+      <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+        <!-- Equipamentos -->
+        ${checks.equipamentos.length > 0 && html`
+          <${Card} title="🎬 Equipamentos" status=${
+            checks.equipamentos.some(c => c.status === 'error') ? 'error' :
+            checks.equipamentos.some(c => c.status === 'warn') ? 'warn' : 'ok'
+          }>
+            <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap;">
+              ${(() => {
+                const stats = countByStatus(checks.equipamentos);
+                return html`
+                  ${stats.ok > 0 && html`<${Badge} label="${stats.ok} OK" variant="success" />`}
+                  ${stats.warn > 0 && html`<${Badge} label="${stats.warn} Atenção" variant="warning" />`}
+                  ${stats.error > 0 && html`<${Badge} label="${stats.error} Erro" variant="destructive" />`}
+                `;
+              })()}
+            </div>
+            <div>
+              ${checks.equipamentos.map(check => html`
+                <${SelftestItem}
+                  name=${check.name}
+                  status=${check.status}
+                  detail=${check.detail}
+                />
               `)}
             </div>
           <//>
-        </div>
-      `)}
+        `}
 
-      <!-- System Info -->
-      ${health && html`
-        <div style="margin-top: 2rem;">
-          <h2 style="margin-bottom: 1rem;">System Information</h2>
-          <${Card} title="System Info" status="info">
-            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem;">
-              <div>
-                <div style="font-size: 0.85rem; color: var(--dimmed); margin-bottom: 0.25rem;">
-                  Exhibition
-                </div>
-                <div style="font-weight: 600;">
-                  ${health.exhibition}
-                </div>
-              </div>
-              <div>
-                <div style="font-size: 0.85rem; color: var(--dimmed); margin-bottom: 0.25rem;">
-                  Uptime
-                </div>
-                <div style="font-weight: 600;">
-                  ${Math.floor(health.uptime / 60)} minutes
-                </div>
-              </div>
-              <div>
-                <div style="font-size: 0.85rem; color: var(--dimmed); margin-bottom: 0.25rem;">
-                  Timestamp
-                </div>
-                <div style="font-weight: 600; font-size: 0.9rem;">
-                  ${new Date(health.timestamp).toLocaleString()}
-                </div>
-              </div>
+        <!-- Cameras -->
+        ${checks.cameras.length > 0 && html`
+          <${Card} title="📹 Câmeras" status=${
+            checks.cameras.some(c => c.status === 'error') ? 'error' :
+            checks.cameras.some(c => c.status === 'warn') ? 'warn' : 'ok'
+          }>
+            <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap;">
+              ${(() => {
+                const stats = countByStatus(checks.cameras);
+                return html`
+                  ${stats.ok > 0 && html`<${Badge} label="${stats.ok} Online" variant="success" />`}
+                  ${stats.warn > 0 && html`<${Badge} label="${stats.warn} Instável" variant="warning" />`}
+                  ${stats.error > 0 && html`<${Badge} label="${stats.error} Offline" variant="destructive" />`}
+                `;
+              })()}
+            </div>
+            <div>
+              ${checks.cameras.map(check => html`
+                <${SelftestItem}
+                  name=${check.name}
+                  status=${check.status}
+                  detail=${check.detail}
+                />
+              `)}
             </div>
           <//>
-        </div>
-      `}
+        `}
+
+        <!-- CV -->
+        ${checks.cv.length > 0 && html`
+          <${Card} title="👁️ Visão Computacional" status=${
+            checks.cv.some(c => c.status === 'error') ? 'error' :
+            checks.cv.some(c => c.status === 'warn') ? 'warn' : 'ok'
+          }>
+            <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap;">
+              ${(() => {
+                const stats = countByStatus(checks.cv);
+                return html`
+                  ${stats.ok > 0 && html`<${Badge} label="${stats.ok} OK" variant="success" />`}
+                  ${stats.warn > 0 && html`<${Badge} label="${stats.warn} Atenção" variant="warning" />`}
+                  ${stats.error > 0 && html`<${Badge} label="${stats.error} Erro" variant="destructive" />`}
+                `;
+              })()}
+            </div>
+            <div>
+              ${checks.cv.map(check => html`
+                <${SelftestItem}
+                  name=${check.name}
+                  status=${check.status}
+                  detail=${check.detail}
+                />
+              `)}
+            </div>
+          <//>
+        `}
+
+        <!-- Comunicacao -->
+        ${checks.comunicacao.length > 0 && html`
+          <${Card} title="🔗 Comunicação" status=${
+            checks.comunicacao.some(c => c.status === 'error') ? 'error' :
+            checks.comunicacao.some(c => c.status === 'warn') ? 'warn' : 'ok'
+          }>
+            <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap;">
+              ${(() => {
+                const stats = countByStatus(checks.comunicacao);
+                return html`
+                  ${stats.ok > 0 && html`<${Badge} label="${stats.ok} Conectado" variant="success" />`}
+                  ${stats.warn > 0 && html`<${Badge} label="${stats.warn} Instável" variant="warning" />`}
+                  ${stats.error > 0 && html`<${Badge} label="${stats.error} Desconectado" variant="destructive" />`}
+                `;
+              })()}
+            </div>
+            <div>
+              ${checks.comunicacao.map(check => html`
+                <${SelftestItem}
+                  name=${check.name}
+                  status=${check.status}
+                  detail=${check.detail}
+                />
+              `)}
+            </div>
+          <//>
+        `}
+
+        <!-- Servidor -->
+        ${checks.servidor.length > 0 && html`
+          <${Card} title="💻 Servidor" status=${
+            checks.servidor.some(c => c.status === 'error') ? 'error' :
+            checks.servidor.some(c => c.status === 'warn') ? 'warn' : 'ok'
+          }>
+            <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap;">
+              ${(() => {
+                const stats = countByStatus(checks.servidor);
+                return html`
+                  ${stats.ok > 0 && html`<${Badge} label="${stats.ok} Normal" variant="success" />`}
+                  ${stats.warn > 0 && html`<${Badge} label="${stats.warn} Atenção" variant="warning" />`}
+                  ${stats.error > 0 && html`<${Badge} label="${stats.error} Crítico" variant="destructive" />`}
+                `;
+              })()}
+            </div>
+            <div>
+              ${checks.servidor.map(check => html`
+                <${SelftestItem}
+                  name=${check.name}
+                  status=${check.status}
+                  detail=${check.detail}
+                />
+              `)}
+            </div>
+          <//>
+        `}
+      </div>
     </div>
   `;
 }
