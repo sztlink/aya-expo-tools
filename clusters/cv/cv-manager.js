@@ -28,7 +28,7 @@ const path = require('path');
 const fs = require('fs');
 const { EventEmitter } = require('events');
 
-const CV_DIR = path.join(__dirname, '..', 'cv');
+const CV_DIR = path.join(__dirname, 'python');
 const OUTPUT_DIR = path.join(CV_DIR, 'output');
 
 class CVManager extends EventEmitter {
