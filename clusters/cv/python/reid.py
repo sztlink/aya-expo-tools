@@ -272,8 +272,9 @@ def check_staff_uniform(crop: np.ndarray, config: dict) -> bool:
     mask = cv2.inRange(hsv, lower, upper)
     ratio = np.count_nonzero(mask) / mask.size
     
-    # Se >30% do upper-body match a cor → provável staff
-    return ratio > 0.3
+    # Threshold from config (default 0.3 = 30% of upper-body matches color)
+    uniform_threshold = config.get("uniformThreshold", 0.3)
+    return ratio > uniform_threshold
 
 
 # ─── ReID Gallery ──────────────────────────────────────────────────────────────
@@ -451,7 +452,7 @@ def main():
 
     detector_output_dir = BASE_OUTPUT_DIR / camera_id
     last_status_time = time.time()
-    status_interval = 30.0  # Status a cada 30s
+    status_interval = reid_config.get("statusInterval", 30.0)
 
     while running:
         loop_start = time.time()
@@ -479,11 +480,19 @@ def main():
 
             # Processa cada detecção
             for det in detections:
-                x, y, w, h = det["x"], det["y"], det["w"], det["h"]
+                try:
+                    x, y, w, h = int(det["x"]), int(det["y"]), int(det["w"]), int(det["h"])
+                except (KeyError, TypeError, ValueError):
+                    continue
                 track_id = det.get("trackId")
                 zones = det.get("zones", [])
                 
-                # Crop da pessoa
+                # Bounds check + crop
+                fh, fw = frame.shape[:2]
+                x, y = max(0, x), max(0, y)
+                w, h = min(w, fw - x), min(h, fh - y)
+                if w <= 0 or h <= 0:
+                    continue
                 crop = frame[y:y+h, x:x+w]
                 if crop.size == 0:
                     continue
