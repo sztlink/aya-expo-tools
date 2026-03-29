@@ -7,6 +7,7 @@ import Button from '../components/base/button.js';
 import InputField from '../components/base/input-field.js';
 import StatusDot from '../components/base/status-dot.js';
 import { WizardProgress, TestButton, EquipmentCard } from '../components/composed/index.js';
+import ZoneCanvas from '../components/composed/zone-canvas.js';
 
 // ─── Configuração dos Passos ──────────────────────────────────
 const STEPS = [
@@ -676,6 +677,25 @@ function Step4({ data, onChange }) {
         variant="secondary"
         onClick=${addCamera}
       />
+
+      ${cameras.some(c => c.status === 'ok') && html`
+        <${Card} title="Zonas de Detecção">
+          <p style="color: var(--muted-foreground); font-size: 0.875rem; margin-bottom: 1rem;">
+            Desenhe polígonos sobre o snapshot para definir zonas de contagem de visitantes.
+            Clique para adicionar pontos, duplo-clique para fechar a zona.
+          </p>
+          ${cameras.filter(c => c.status === 'ok').map((cam, i) => html`
+            <div style="margin-bottom: 1.5rem;">
+              <h4 style="margin-bottom: 0.5rem;">${cam.name || cam.id}</h4>
+              <${ZoneCanvas}
+                snapshotData=${cam.snapshotData}
+                zones=${cam.zones || []}
+                onZonesChange=${(newZones) => updateCamera(cameras.indexOf(cam), 'zones', newZones)}
+              />
+            </div>
+          `)}
+        </${Card}>
+      `}
 
       <${Card} status="info">
         <div style="display: flex; gap: 0.5rem; font-size: 0.875rem; color: var(--muted-foreground);">
