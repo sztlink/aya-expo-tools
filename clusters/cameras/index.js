@@ -27,7 +27,7 @@ module.exports = {
       name: this.name,
       healthy: true,
       details: {
-        cameras: this.cameras ? this.cameras.getStatus() : null
+        cameras: this.cameras ? this.cameras.getAllStatus() : null
       }
     };
   }

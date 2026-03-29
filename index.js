@@ -73,7 +73,17 @@ if (setupMode) {
   // ── Core routes ──────────────────────────────────────────
   require('./core/routes/session')(app, { session: core.session, addLogEntry: core.addLogEntry });
   require('./core/routes/config')(app, config);
-  require('./core/routes/health')(app, core);
+  const network = require('./core/network');
+  const serverHealth = require('./core/server-health');
+  require('./core/routes/health')(app, {
+    config,
+    network,
+    serverHealth,
+    cvManager: clusters.cv?.cvManager || null,
+    projectors: clusters.equipment?.projectors || null,
+    cameras: clusters.cameras?.cameras || null,
+    scheduler
+  });
   require('./core/routes/schedule')(app, { scheduler });
   require('./core/routes/archive')(app, config);
 

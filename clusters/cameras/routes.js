@@ -7,7 +7,7 @@ module.exports = function(app, cluster) {
 
   // --- Cameras ---
   app.get('/api/cameras', (req, res) => {
-    res.json({ ok: true, data: cameras.getStatus() });
+    res.json({ ok: true, data: cameras.getAllStatus() });
   });
 
   app.post('/api/cameras/check', async (req, res) => {
