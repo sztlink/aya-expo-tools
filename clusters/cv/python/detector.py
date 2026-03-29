@@ -247,16 +247,45 @@ def parse_config(config_path: str, camera_id: str) -> dict:
             rtsp_url = f"rtsp://{user_enc}:{pass_enc}@{ip}:{port}/cam/realmonitor?channel={channel}&subtype=0"
             break
 
+    # Hardware auto-detect: ajusta model/fps/resolution por VRAM
+    hardware = cv_config.get("hardware", "auto")
+    model_name = cv_config.get("model")
+    imgsz = cv_config.get("imgsz")
+    interval = cv_config.get("interval")
+
+    if hardware == "auto" or (not model_name and not imgsz):
+        from env_config import detect_gpu
+        gpu_info = detect_gpu()
+        vram_gb = gpu_info.get("memory_mb", 0) / 1024
+
+        if not model_name:
+            if vram_gb >= 16:
+                model_name = "yolov8l"
+            elif vram_gb >= 8:
+                model_name = "yolov8m"
+            else:
+                model_name = "yolov8n"
+
+        if not imgsz:
+            imgsz = 1280 if vram_gb >= 16 else (960 if vram_gb >= 8 else 640)
+
+        if interval is None:
+            # fps: >=16GB → 10fps (0.1s), >=8GB → 5fps (0.2s), <8GB → 3fps (0.33s)
+            interval = 0.1 if vram_gb >= 16 else (0.2 if vram_gb >= 8 else 0.33)
+
+        print(f"[CV] Hardware auto: {gpu_info.get('name', '?')} ({vram_gb:.0f}GB) → {model_name} {imgsz}px {1/max(interval,0.01):.0f}fps",
+              file=sys.stderr, flush=True)
+
     return {
         "rtsp": rtsp_url,
         "gpu": str(cv_config.get("gpu", 0)),
-        "interval": float(cv_config.get("interval", 0)),  # 0 = contínuo
-        "model": cv_config.get("model", "yolo11n"),
+        "interval": float(interval if interval is not None else 0),
+        "model": model_name or "yolo11n",
         "heatmap_decay": float(cv_config.get("heatmapDecay", 0.999)),
         "confidence": float(cv_config.get("confidence", 0.4)),
         "camera": cam_id,
-        "imgsz": int(cv_config.get("imgsz", 640)),
-        "zones_raw": cv_config,  # passado para parse_zones
+        "imgsz": int(imgsz or 640),
+        "zones_raw": cv_config,
     }
 
 

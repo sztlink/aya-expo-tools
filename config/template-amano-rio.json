@@ -1,0 +1,105 @@
+{
+  "exhibition": {
+    "name": "Yoshitaka Amano — CCBB Rio",
+    "venue": "CCBB Rio de Janeiro",
+    "city": "Rio de Janeiro",
+    "slug": "amano-rio",
+    "dates": {
+      "open": "2026-04-22",
+      "close": "2026-07-20"
+    },
+    "network": {
+      "mediaServer": "192.168.0.10"
+    }
+  },
+  "projectors": [
+    {
+      "id": "proj-1",
+      "name": "Projetor 1",
+      "ip": "10.0.1.20",
+      "model": "",
+      "input": "HDMI1"
+    }
+  ],
+  "cameras": [],
+  "pjlink": {
+    "port": 4352,
+    "password": "",
+    "pollInterval": 30000
+  },
+  "schedule": {
+    "timezone": "America/Sao_Paulo",
+    "days": {
+      "mon": null,
+      "tue": {
+        "open": "09:00",
+        "close": "20:00"
+      },
+      "wed": {
+        "open": "09:00",
+        "close": "20:00"
+      },
+      "thu": {
+        "open": "09:00",
+        "close": "20:00"
+      },
+      "fri": {
+        "open": "09:00",
+        "close": "20:00"
+      },
+      "sat": {
+        "open": "09:00",
+        "close": "20:00"
+      },
+      "sun": {
+        "open": "09:00",
+        "close": "20:00"
+      }
+    }
+  },
+  "cv": {
+    "enabled": true,
+    "hardware": "auto",
+    "model": null,
+    "imgsz": null,
+    "interval": null,
+    "gpu": 0,
+    "confidence": 0.4,
+    "heatmapDecay": 0.999,
+    "zones": [],
+    "reid": {
+      "enabled": true,
+      "model": "osnet_x0_25",
+      "thresholds": {
+        "sameZone": 0.4,
+        "crossZone": 0.6
+      },
+      "featureGallerySize": 5,
+      "spatialBoost": true,
+      "matchInterval": 1,
+      "statusInterval": 30
+    },
+    "staffFilter": {
+      "enabled": false,
+      "colorHSV": [
+        120,
+        50,
+        50
+      ],
+      "colorRange": [
+        20,
+        80,
+        80
+      ],
+      "timeMinutes": 15,
+      "uniformThreshold": 0.3
+    },
+    "counter": {
+      "enabled": true
+    }
+  },
+  "server": {
+    "port": 3000,
+    "host": "0.0.0.0"
+  }
+}
