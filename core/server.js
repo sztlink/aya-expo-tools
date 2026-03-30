@@ -167,7 +167,7 @@ function start(config, { app, server }, managers = {}) {
 
   server.listen(PORT, HOST, () => {
     console.log(`  🌐 http://localhost:${PORT}`);
-    console.log(`  🌐 http://${config.exhibition.network?.mediaServer || 'localhost'}:${PORT}\n`);
+    console.log(`  🌐 http://${config?.exhibition?.network?.mediaServer || 'localhost'}:${PORT}\n`);
 
     // Start managers if provided
     if (managers.projectors) managers.projectors.startPolling(config.pjlink?.pollInterval || 30000);

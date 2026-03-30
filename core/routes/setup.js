@@ -254,30 +254,56 @@ module.exports = function(app) {
         unknown: 'Desconhecido'
       };
 
+      // Detectar IP local desta maquina (preferir rede local sobre VPN)
+      const os = require('os');
+      const allIPs = [];
+      const ifaces = os.networkInterfaces();
+      for (const name of Object.keys(ifaces)) {
+        for (const iface of ifaces[name]) {
+          if (iface.family === 'IPv4' && !iface.internal) {
+            const isVPN = name.toLowerCase().includes('wg') || name.toLowerCase().includes('wireguard') || iface.address.startsWith('10.253.');
+            allIPs.push({ ip: iface.address, name, isVPN });
+          }
+        }
+      }
+      // Ordena: rede local primeiro, VPN depois
+      allIPs.sort((a, b) => (a.isVPN ? 1 : 0) - (b.isVPN ? 1 : 0));
+      const localIPs = new Set(allIPs.map(x => x.ip));
+
       const devices = [];
       const lines = stdout.split('\n');
       
       for (const line of lines) {
         const match = line.match(/(\d+\.\d+\.\d+\.\d+)\s+([0-9a-f-]+)\s+(\w+)/i);
         if (match) {
+          const ip = match[1];
           const mac = match[2];
+
+          // Filtrar multicast, broadcast e MACs invalidos
+          if (ip.startsWith('224.') || ip.startsWith('239.') || ip.startsWith('255.')) continue;
+          if (mac === 'ff-ff-ff-ff-ff-ff' || mac.startsWith('01-00-5e')) continue;
+          if (mac === '---' || mac === 'ff-ff-ff-ff-ff-ff') continue;
+
           const oui = lookupOUI(mac);
+          const isLocal = localIPs.has(ip);
+
           devices.push({
-            ip: match[1],
-            mac,
+            ip,
+            mac: mac === '---' ? null : mac,
             vendor: oui.vendor,
-            deviceType: oui.deviceType,
-            deviceTypeLabel: DEVICE_TYPE_LABELS[oui.deviceType] || 'Desconhecido',
-            interfaceType: match[3]
+            deviceType: isLocal ? 'mediaserver' : oui.deviceType,
+            deviceTypeLabel: isLocal ? 'Este computador' : (DEVICE_TYPE_LABELS[oui.deviceType] || 'Desconhecido'),
+            isLocal
           });
         }
       }
 
-      // Ordena: equipamentos conhecidos primeiro
-      const typeOrder = { projector: 0, camera: 1, tv: 2, plug: 3, unknown: 4 };
+      // Ordena: media server primeiro, equipamentos conhecidos depois, desconhecidos por ultimo
+      const typeOrder = { mediaserver: -1, projector: 0, camera: 1, tv: 2, plug: 3, unknown: 4 };
       devices.sort((a, b) => (typeOrder[a.deviceType] || 4) - (typeOrder[b.deviceType] || 4));
       
-      res.json({ ok: true, devices });
+      const preferredIP = allIPs.length > 0 ? allIPs[0].ip : null;
+      res.json({ ok: true, devices, localIPs: Array.from(localIPs), preferredIP });
     } catch (err) {
       console.error('[Setup] Network scan failed:', err);
       res.json({ ok: false, error: err.message, devices: [] });

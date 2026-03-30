@@ -357,6 +357,10 @@ function Step2({ data, onChange }) {
       
       if (result.ok && result.devices) {
         setDevices(result.devices);
+        // Auto-preencher IP do media server (preferir rede local, nao VPN)
+        if (!mediaServer && result.preferredIP) {
+          setMediaServer(result.preferredIP);
+        }
       } else {
         alert('Nenhum dispositivo encontrado na rede.');
       }
@@ -398,14 +402,14 @@ function Step2({ data, onChange }) {
         <${Card} title="Dispositivos Encontrados">
           <div style="display: flex; flex-direction: column; gap: 0.5rem;">
             ${devices.map(device => {
-              const variantMap = { projector: 'primary', camera: 'accent', tv: 'info', plug: 'warning', unknown: 'muted' };
+              const variantMap = { mediaserver: 'success', projector: 'primary', camera: 'accent', tv: 'info', plug: 'warning', unknown: 'muted' };
               const variant = variantMap[device.deviceType] || 'muted';
               return html`
-                <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; border-bottom: 1px solid var(--border); gap: 1rem;">
-                  <span style="font-family: var(--font-mono); font-weight: 600;">${device.ip}</span>
-                  <span style="font-family: var(--font-mono); color: var(--muted-foreground); font-size: 0.8rem;">${device.mac || '—'}</span>
-                  ${device.vendor && html`<span style="color: var(--foreground); font-size: 0.85rem;">${device.vendor}</span>`}
-                  <${Badge} variant=${variant}>${device.deviceTypeLabel || device.deviceType}</${Badge}>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; border-bottom: 1px solid var(--border); gap: 1rem; ${device.isLocal ? 'background: var(--muted);' : ''}">
+                  <span style="font-family: var(--font-mono); font-weight: 600; min-width: 120px;">${device.ip}</span>
+                  <span style="font-family: var(--font-mono); color: var(--muted-foreground); font-size: 0.8rem; min-width: 130px;">${device.mac || ''}</span>
+                  <span style="color: var(--foreground); font-size: 0.85rem; min-width: 80px;">${device.vendor || ''}</span>
+                  <${Badge} variant=${variant}>${device.deviceTypeLabel}</${Badge}>
                 </div>
               `;
             })}
