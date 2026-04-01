@@ -10,12 +10,20 @@ module.exports = function(app, cluster) {
   });
 
   app.get('/api/cv/count', (req, res) => {
-    const counts = cvManager.getCounts();
-    res.json({ ok: true, data: counts });
+    // getCounts() não existe — usa getStatus() que inclui totalCount e zones
+    const status = cvManager.getStatus();
+    res.json({ ok: true, data: { totalCount: status.totalCount, zones: status.zones, counter: status.counter } });
   });
 
   app.get('/api/cv/detections', (req, res) => {
-    res.json({ ok: true, data: cvManager.getAllDetections() });
+    // getAllDetections() não existe — agrega por câmera via getStatus().perCamera
+    const status = cvManager.getStatus();
+    const all = {};
+    for (const [camId, cam] of Object.entries(status.perCamera || {})) {
+      const det = cvManager.getDetections(camId);
+      if (det) all[camId] = det;
+    }
+    res.json({ ok: true, data: all });
   });
 
   app.get('/api/cv/:camId/detections', (req, res) => {

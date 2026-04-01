@@ -15,7 +15,12 @@ function loadConfig(configName) {
 
   let raw = fs.readFileSync(configPath, 'utf8');
   if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1); // BOM
-  const config = JSON.parse(raw);
+  let config;
+  try {
+    config = JSON.parse(raw);
+  } catch (e) {
+    return { valid: false, error: `JSON inválido em ${configName}.json: ${e.message}` };
+  }
   config._name = configName;
   config._path = configPath;
   return { valid: true, config };

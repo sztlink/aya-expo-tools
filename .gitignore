@@ -10,7 +10,10 @@ media/*.mp4
 media/*.mov
 media/*.avi
 media/*.mkv
-config/tuya-cloud.json
+# Configs reais de exposição (contêm credenciais — usar template.json como base)
+config/*.json
+!config/template.json
+!config/template-amano-rio.json
 installer/output/
 src-tauri/target/
 src-tauri/target/

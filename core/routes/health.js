@@ -45,7 +45,7 @@ module.exports = function(app, { config, network, serverHealth, cvManager, proje
   // ─── API: Health ───────────────────────────────────────────
   app.get('/api/health', async (req, res) => {
     const inet = await network.checkInternet();
-    const cvStatus = cvManager.getStatus();
+    const cvStatus = cvManager ? cvManager.getStatus() : { enabled: false, running: false };
     const sh = serverHealth.getCurrent();
     res.json({
       status: 'ok',

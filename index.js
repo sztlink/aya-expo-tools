@@ -71,7 +71,13 @@ if (setupMode) {
   });
 
   // ── Core routes ──────────────────────────────────────────
-  require('./core/routes/session')(app, { session: core.session, addLogEntry: core.addLogEntry });
+  require('./core/routes/session')(app, {
+    session: core.session,
+    addLogEntry: core.addLogEntry,
+    readLog: core.readLog,
+    writeLog: core.writeLog,
+    broadcast: core.broadcast,
+  });
   require('./core/routes/config')(app, config);
   const network = require('./core/network');
   const serverHealth = require('./core/server-health');

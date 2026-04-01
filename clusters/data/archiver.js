@@ -26,6 +26,8 @@ const { execSync } = require('child_process');
  * @returns {Promise<Array<{letter: string, label: string, freeGB: number}>>}
  */
 async function detectExternalDrives() {
+  // TODO: execSync bloqueia o event loop Node.js por 1-3s (wmic é lento no Windows).
+  // Mover para worker thread ou execFile com callback em versão futura.
   try {
     // Use wmic to get drives: DriveType 2 = Removable, 3 = Local fixed
     const cmd = 'wmic logicaldisk get name,drivetype,volumename,freespace /format:csv';

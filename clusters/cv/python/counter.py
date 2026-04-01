@@ -51,7 +51,15 @@ def write_json(filepath, data):
     tmp = str(filepath) + ".tmp"
     with open(tmp, 'w') as f:
         json.dump(data, f)
-    os.replace(tmp, str(filepath))
+    for _attempt in range(5):
+        try:
+            os.replace(tmp, str(filepath))
+            return
+        except PermissionError:
+            time.sleep(0.05)
+    # fallback: escrita direta (Windows file lock)
+    with open(str(filepath), 'w') as f:
+        json.dump(data, f)
 
 
 def write_status(status, **kwargs):

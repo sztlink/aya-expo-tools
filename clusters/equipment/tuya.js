@@ -18,6 +18,7 @@ const BASE_HOST = 'openapi.tuyaus.com' // Western America Data Center
 
 let _token = null
 let _tokenExpires = 0
+let _tokenPromise = null  // mutex: evita race condition em chamadas simultâneas
 
 // ─── Load credentials ─────────────────────────────────────────
 
@@ -73,11 +74,17 @@ function apiRequest(method, apiPath, body, token) {
 
 async function getToken() {
   if (_token && Date.now() < _tokenExpires) return _token
-  const res = await apiRequest('GET', '/v1.0/token?grant_type=1')
-  if (!res.success) throw new Error('Tuya token error: ' + (res.msg || JSON.stringify(res)))
-  _token = res.result.access_token
-  _tokenExpires = Date.now() + (res.result.expire_time * 1000) - 60000 // refresh 1min early
-  return _token
+  // Mutex: se já existe uma requisição de token em andamento, aguarda ela
+  if (_tokenPromise) return _tokenPromise
+  _tokenPromise = apiRequest('GET', '/v1.0/token?grant_type=1')
+    .then(res => {
+      if (!res.success) throw new Error('Tuya token error: ' + (res.msg || JSON.stringify(res)))
+      _token = res.result.access_token
+      _tokenExpires = Date.now() + (res.result.expire_time * 1000) - 60000
+      return _token
+    })
+    .finally(() => { _tokenPromise = null })
+  return _tokenPromise
 }
 
 // ─── Device control ───────────────────────────────────────────

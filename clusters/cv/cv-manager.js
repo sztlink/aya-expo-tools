@@ -579,19 +579,23 @@ class CVManager extends EventEmitter {
         break;
 
       case 'match':
-      case 'new_identity':
-        // Cache último evento ReID
+      case 'new_identity': {
+        // Cache eventos ReID — rolling window (evita crescimento infinito)
+        const REID_CACHE_MAX = 500;
         if (!this._reidCache.has(camId)) {
           this._reidCache.set(camId, { matches: [], newIdentities: [] });
         }
-        const cache = this._reidCache.get(camId);
+        const reidCache = this._reidCache.get(camId);
         if (event.event === 'match') {
-          cache.matches.push(event);
+          reidCache.matches.push(event);
+          if (reidCache.matches.length > REID_CACHE_MAX) reidCache.matches.shift();
         } else {
-          cache.newIdentities.push(event);
+          reidCache.newIdentities.push(event);
+          if (reidCache.newIdentities.length > REID_CACHE_MAX) reidCache.newIdentities.shift();
         }
         this.emit(event.event === 'match' ? 'reid_match' : 'reid_new_identity', { camId, ...event });
         break;
+      }
 
       case 'status':
         // Armazena status ReID

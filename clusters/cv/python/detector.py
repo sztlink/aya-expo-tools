@@ -88,10 +88,23 @@ def emit_status(status: str, **kwargs):
     emit({"event": "status", "status": status, "timestamp": ts, "pid": os.getpid(), **kwargs})
     # Também escreve arquivo para backward compat
     if STATUS_FILE:
-        tmp = str(STATUS_FILE) + ".tmp"
-        with open(tmp, "w") as f:
-            json.dump({"status": status, "timestamp": ts, "pid": os.getpid(), **kwargs}, f)
-        os.replace(tmp, str(STATUS_FILE))
+        _write_json_safe(STATUS_FILE, {"status": status, "timestamp": ts, "pid": os.getpid(), **kwargs})
+
+
+def _write_json_safe(path, data):
+    """Escrita atômica com retry — evita PermissionError no Windows (os.replace race)."""
+    tmp = str(path) + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f)
+    for _attempt in range(5):
+        try:
+            os.replace(tmp, str(path))
+            return
+        except PermissionError:
+            time.sleep(0.05)
+    # fallback: escrita direta
+    with open(str(path), "w") as f:
+        json.dump(data, f)
 
 
 # ─── Zonas ─────────────────────────────────────────────────────────────────────
@@ -533,6 +546,9 @@ def main():
                     dwell_sec = (now_ts - entered_dt).total_seconds()
                     if 3 < dwell_sec < 7200:  # filter noise (< 3s) and stale (> 2h)
                         zone_dwell_times[zid].append(dwell_sec)
+                        # Cap rolling buffer para evitar crescimento infinito
+                        if len(zone_dwell_times[zid]) > 2000:
+                            zone_dwell_times[zid] = zone_dwell_times[zid][-1000:]
                 except Exception:
                     pass
 
@@ -600,10 +616,7 @@ def main():
                 "detections": detections,
                 "zones": zone_counts,
             }
-            tmp = str(DETECTIONS_FILE) + ".tmp"
-            with open(tmp, "w") as f:
-                json.dump(result_data, f)
-            os.replace(tmp, str(DETECTIONS_FILE))
+            _write_json_safe(DETECTIONS_FILE, result_data)
 
             # Heatmap
             save_heatmap(heatmap_acc, (h, w))
@@ -634,8 +647,10 @@ def main():
                             (10, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 200, 255), 1)
                 y_offset += 22
 
-            # Desenha polígonos das zonas
+            # Desenha polígonos das zonas (polygon=None = full frame, não desenha)
             for z in zones:
+                if z["polygon"] is None:
+                    continue
                 poly_pts = z["polygon"].reshape((-1, 1, 2)).astype(np.int32)
                 cv2.polylines(annotated, [poly_pts], isClosed=True, color=(0, 200, 255), thickness=2)
                 # Label no centroide

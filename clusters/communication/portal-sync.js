@@ -280,7 +280,7 @@ class PortalSync {
       projectors: this.projectors.getAllStatus(),
       cameras: this.cameras.getAllStatus(),
       tvs: await this._getTvStatus(),
-      log: this.readLog().slice(0, 50),
+      log: typeof this.readLog === 'function' ? this.readLog().slice(0, 50) : [],
       session: this.session ? { active: this.session.active, startedAt: this.session.startedAt, startedBy: this.session.startedBy } : null,
       cv: this.cvManager ? this._buildCvPayload() : null,
       server: this.serverHealth ? this.serverHealth.getCurrent() : null,

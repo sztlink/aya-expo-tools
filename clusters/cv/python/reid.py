@@ -94,6 +94,7 @@ def parse_config(config_path: str, camera_id: str) -> dict:
         "featureGallerySize": reid_config.get("featureGallerySize", 5),
         "spatialBoost": reid_config.get("spatialBoost", True),
         "matchInterval": reid_config.get("matchInterval", 1.0),
+        "statusInterval": reid_config.get("statusInterval", 30.0),
         "staffFilter": {
             "enabled": staff_filter.get("enabled", False),
             "colorHSV": staff_filter.get("colorHSV", [120, 50, 50]),
@@ -452,7 +453,7 @@ def main():
 
     detector_output_dir = BASE_OUTPUT_DIR / camera_id
     last_status_time = time.time()
-    status_interval = reid_config.get("statusInterval", 30.0)
+    status_interval = settings.get("statusInterval", 30.0)
 
     while running:
         loop_start = time.time()
@@ -521,9 +522,12 @@ def main():
                     # Match encontrado
                     gallery.add_feature(reid_id, feature, camera_id, zone)
                     
-                    # Staff filter (time-based)
-                    is_staff_time = gallery.check_staff_by_time(
-                        reid_id, settings["staffFilter"]["timeMinutes"]
+                    # Staff filter (time-based) — só roda se staffFilter.enabled=true
+                    is_staff_time = (
+                        settings["staffFilter"]["enabled"]
+                        and gallery.check_staff_by_time(
+                            reid_id, settings["staffFilter"]["timeMinutes"]
+                        )
                     )
                     
                     is_staff = is_staff_uniform or is_staff_time

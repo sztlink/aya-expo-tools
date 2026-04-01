@@ -67,6 +67,7 @@ class Scheduler {
       }
     }
 
+    this.enabled = jobCount > 0;
     console.log(`  📅 Scheduler: ${jobCount} jobs scheduled (tz: ${tz})`);
   }
 

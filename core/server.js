@@ -8,20 +8,30 @@ const fs = require('fs');
 // ─── Log Functions ─────────────────────────────────────────
 const LOG_PATH = path.join(__dirname, '..', 'config', 'log.json');
 
+// Cache em memória — evita readFileSync/writeFileSync a cada addLogEntry
+let _logCache = null;
+
 function readLog() {
-  if (!fs.existsSync(LOG_PATH)) return [];
-  try { return JSON.parse(fs.readFileSync(LOG_PATH, 'utf8')); } catch { return []; }
+  if (_logCache) return [..._logCache]; // retorna cópia para evitar mutação externa
+  if (!fs.existsSync(LOG_PATH)) { _logCache = []; return []; }
+  try {
+    _logCache = JSON.parse(fs.readFileSync(LOG_PATH, 'utf8'));
+    return [..._logCache];
+  } catch { _logCache = []; return []; }
 }
 
 function writeLog(entries) {
-  fs.writeFileSync(LOG_PATH, JSON.stringify(entries, null, 2));
+  _logCache = entries.slice(0, 200); // mantém cache sincronizado
+  // Escrita assíncrona — não bloqueia event loop
+  fs.writeFile(LOG_PATH, JSON.stringify(entries, null, 2), () => {});
 }
 
 function addLogEntry(message, type = 'system') {
-  const entries = readLog();
-  entries.unshift({ message, type, timestamp: new Date().toISOString() });
-  if (entries.length > 200) entries.splice(200);
-  writeLog(entries);
+  if (!_logCache) readLog(); // inicializa cache se necessário
+  _logCache.unshift({ message, type, timestamp: new Date().toISOString() });
+  if (_logCache.length > 200) _logCache.splice(200);
+  // Escrita assíncrona — não bloqueia event loop
+  fs.writeFile(LOG_PATH, JSON.stringify(_logCache, null, 2), () => {});
 }
 
 // ─── Session Manager ───────────────────────────────────────
@@ -102,9 +112,11 @@ function createApp(config) {
     
     // Inject token as meta tag if configured
     if (AYA_TOKEN) {
+      // Sanitiza AYA_TOKEN para evitar quebra de HTML (XSS via atributo)
+      const safeToken = AYA_TOKEN.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       html = html.replace(
         '</head>',
-        `  <meta name="aya-token" content="${AYA_TOKEN}">\n</head>`
+        `  <meta name="aya-token" content="${safeToken}">\n</head>`
       );
     }
     
