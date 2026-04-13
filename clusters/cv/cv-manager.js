@@ -45,7 +45,8 @@ class CVManager extends EventEmitter {
 
     this.processes = new Map();   // camId → { process, pid, camId }
     this.reidProcesses = new Map(); // camId → { process, pid, camId } for ReID
-    this.counterProcess = null;
+    this.counterProcess = null;        // single mode
+    this.counterProcesses = new Map(); // dual mode: 'entry'|'exit' → { process, pid }
     this._buffers = new Map();    // camId → string (linha parcial)
     this._reidBuffers = new Map(); // camId → string (linha parcial ReID)
     this._cache = new Map();      // camId → último evento 'detection' recebido
@@ -88,10 +89,15 @@ class CVManager extends EventEmitter {
       }
     }
 
-    // Visitor counter (ainda usa arquivo — não muda nesta versão)
+    // Visitor counter
     const counterCfg = this.cvConfig.counter;
     if (counterCfg?.enabled) {
-      this._startCounter(pythonCmd, this._configPath, counterCfg);
+      if (counterCfg.mode === 'dual') {
+        this._startCounterInstance(pythonCmd, this._configPath, counterCfg.entry || {}, 'entry');
+        this._startCounterInstance(pythonCmd, this._configPath, counterCfg.exit  || {}, 'exit');
+      } else {
+        this._startCounter(pythonCmd, this._configPath, counterCfg);
+      }
     }
   }
 
@@ -112,6 +118,9 @@ class CVManager extends EventEmitter {
       try { entry.process.kill('SIGTERM'); } catch {}
     }
 
+    for (const [, cp] of this.counterProcesses) {
+      if (cp) { pids.push(cp.pid); try { cp.process.kill('SIGTERM'); } catch {} }
+    }
     if (this.counterProcess) {
       pids.push(this.counterProcess.pid);
       try { this.counterProcess.process.kill('SIGTERM'); } catch {}
@@ -128,6 +137,10 @@ class CVManager extends EventEmitter {
       this.reidProcesses.clear();
       this._buffers.clear();
       this._reidBuffers.clear();
+      for (const [role, cp] of this.counterProcesses) {
+        if (cp) { try { cp.process.kill('SIGKILL'); } catch {} }
+      }
+      this.counterProcesses.clear();
       if (this.counterProcess) {
         try { this.counterProcess.process.kill('SIGKILL'); } catch {}
         this.counterProcess = null;
@@ -262,8 +275,13 @@ class CVManager extends EventEmitter {
       })),
       perCamera,
       counter: counterData
-        ? { running: !!this.counterProcess, pid: this.counterProcess?.pid || null, ...counterData }
-        : { running: !!this.counterProcess, enabled: !!(this.cvConfig.counter?.enabled) },
+        ? {
+            running: this.counterProcess != null || this.counterProcesses.size > 0,
+            pid: this.counterProcess?.pid || null,
+            pids: [...this.counterProcesses.values()].map(p => p.pid),
+            ...counterData
+          }
+        : { running: this.counterProcess != null || this.counterProcesses.size > 0, enabled: !!(this.cvConfig.counter?.enabled) },
       model: this.cvConfig.model || 'yolo11n',
       gpu: this.cvConfig.gpu ?? 0,
       protocol: 'jsonl-v2',
@@ -623,6 +641,55 @@ class CVManager extends EventEmitter {
 
   // ─── Visitor Counter (arquivo-based, inalterado) ───────────────────────────
 
+  // Dual-camera helper: one instance per role ('entry' or 'exit')
+  _startCounterInstance(pythonCmd, configPath, cfg, role) {
+    const camId = cfg.camera || (role === 'entry' ? 'cam-1' : 'cam-2');
+    const cam = this.camerasConfig.find(c => c.id === camId);
+    const user = cam ? encodeURIComponent(cam.user || 'admin') : 'admin';
+    const pass = cam?.password ? encodeURIComponent(cam.password) : '';
+    const rtspUrl = cam
+      ? `rtsp://${user}:${pass}@${cam.ip}:554/cam/realmonitor?channel=1&subtype=0`
+      : null;
+
+    const args = [
+      path.join(CV_DIR, 'counter.py'),
+      '--mode', role,
+      '--gpu', String(this.cvConfig.gpu ?? 0),
+      '--line', cfg.line || '500,480,1400,480',
+      '--confidence', String(cfg.confidence ?? 0.45),
+      '--interval', String(cfg.interval ?? 0.5),
+      '--model', this.cvConfig.model || 'yolo11n',
+    ];
+    if (rtspUrl) args.push('--rtsp', rtspUrl);
+    if (configPath) args.push('--config', configPath);
+
+    console.log(`  👁️ CV [counter-${role}]: iniciando em ${camId}`);
+
+    const proc = spawn(pythonCmd, args, {
+      cwd: CV_DIR,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+
+    proc.stdout.on('data', d => d.toString().trim().split('\n').forEach(l => l.trim() && console.log(`  👁️ [counter-${role}] ${l.trim()}`)));
+    proc.stderr.on('data', d => d.toString().trim().split('\n').forEach(l => l.trim() && console.error(`  👁️ [counter-${role}] [err] ${l.trim()}`)));
+
+    proc.on('exit', (code) => {
+      console.log(`  👁️ CV [counter-${role}]: encerrado (code ${code})`);
+      this.counterProcesses.delete(role);
+      if (this.enabled && code !== 0) {
+        setTimeout(() => {
+          if (this.enabled) {
+            const py = this._findPython();
+            if (py) this._startCounterInstance(py, configPath, cfg, role);
+          }
+        }, 10000);
+      }
+    });
+
+    this.counterProcesses.set(role, { process: proc, pid: proc.pid });
+  }
+
   _startCounter(pythonCmd, configPath, counterCfg) {
     const camId = counterCfg.camera || 'cam-2';
     const cam = this.camerasConfig.find(c => c.id === camId);
@@ -681,10 +748,32 @@ class CVManager extends EventEmitter {
     try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
   }
 
+  _readJsonFile(filePath) {
+    if (!fs.existsSync(filePath)) return null;
+    try { return JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch { return null; }
+  }
+
   _readCounterData() {
-    const file = path.join(OUTPUT_DIR, 'counter', 'count.json');
-    if (!fs.existsSync(file)) return null;
-    try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
+    const mode = this.cvConfig?.counter?.mode || 'single';
+    if (mode === 'dual') {
+      const entryFile = path.join(OUTPUT_DIR, 'counter', 'entry', 'count.json');
+      const exitFile  = path.join(OUTPUT_DIR, 'counter', 'exit',  'count.json');
+      const entry = this._readJsonFile(entryFile);
+      const exit_ = this._readJsonFile(exitFile);
+      if (!entry && !exit_) return null;
+      const entries = entry?.entries ?? 0;
+      const exits   = exit_?.exits   ?? 0;
+      return {
+        mode: 'dual',
+        entries,
+        exits,
+        occupancy: Math.max(0, entries - exits),
+        entry: entry || null,
+        exit:  exit_  || null,
+        timestamp: new Date().toISOString(),
+      };
+    }
+    return this._readJsonFile(path.join(OUTPUT_DIR, 'counter', 'count.json'));
   }
 
   _getCameraDirs() {

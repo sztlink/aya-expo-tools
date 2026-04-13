@@ -373,6 +373,15 @@
         <span style="font-size:11px;color:var(--text-dim);font-family:'JetBrains Mono',monospace;" id="counterDate">—</span>
       </div>
 
+      <!-- Dual-camera indicator (shown only in dual mode) -->
+      <div id="dualModeInfo" style="display:none;margin-bottom:12px;padding:8px 12px;
+        background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-md);
+        font-size:11px;color:var(--text-dim);font-family:'JetBrains Mono',monospace;">
+        📹 <span id="dualEntryCam">cam-1</span> &rarr; entradas &nbsp;&middot;&nbsp;
+        📹 <span id="dualExitCam">cam-2</span> &rarr; saídas &nbsp;&middot;&nbsp;
+        Ocupação = Entradas &minus; Saídas
+      </div>
+
       <!-- Hero numbers -->
       <div class="counter-hero">
         <div class="counter-card accent">
@@ -629,7 +638,20 @@
       $('cOccupancy').textContent = c.occupancy ?? '—';
       $('cEntries').textContent = c.entries ?? '—';
       $('cExits').textContent = c.exits ?? '—';
-      $('counterDate').textContent = c.date || new Date().toISOString().slice(0, 10);
+      $('counterDate').textContent =
+        c.date || (c.entry?.date || c.exit?.date) || new Date().toISOString().slice(0, 10);
+
+      // Dual-mode indicator
+      const dualInfo = $('dualModeInfo');
+      if (dualInfo) {
+        if (c.mode === 'dual') {
+          dualInfo.style.display = '';
+          $('dualEntryCam').textContent = c.entry?.camera || 'cam-1';
+          $('dualExitCam').textContent  = c.exit?.camera  || 'cam-2';
+        } else {
+          dualInfo.style.display = 'none';
+        }
+      }
 
       // Dwell
       const dw = c.dwellTime;

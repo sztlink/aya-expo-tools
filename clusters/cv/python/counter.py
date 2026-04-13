@@ -28,9 +28,11 @@ import cv2
 import numpy as np
 
 SCRIPT_DIR = Path(__file__).parent
-OUTPUT_DIR = SCRIPT_DIR / "output" / "counter"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# OUTPUT_DIR resolved after args are parsed (may be overridden by --output-dir / --mode)
+_DEFAULT_OUTPUT_DIR = SCRIPT_DIR / "output" / "counter"
 
+# Placeholders — will be set in main() after arg parsing
+OUTPUT_DIR = _DEFAULT_OUTPUT_DIR
 COUNT_FILE = OUTPUT_DIR / "count.json"
 FRAME_FILE = OUTPUT_DIR / "frame.jpg"
 STATUS_FILE = OUTPUT_DIR / "status.json"
@@ -258,7 +260,25 @@ def main():
     parser.add_argument("--confidence", type=float, default=0.45)
     parser.add_argument("--model", default="yolov8n")
     parser.add_argument("--interval", type=float, default=1.0, help="Seconds between frames")
+    parser.add_argument("--mode", default="single", choices=["single", "entry", "exit"],
+                        help="Counter role: single (default), entry, or exit (for dual-camera setup)")
+    parser.add_argument("--output-dir", default=None, help="Override output directory")
     args = parser.parse_args()
+
+    # Resolve output directory: --output-dir > --mode > default
+    global OUTPUT_DIR, COUNT_FILE, FRAME_FILE, STATUS_FILE, HOURLY_FILE
+    if args.output_dir:
+        OUTPUT_DIR = Path(args.output_dir)
+    elif args.mode in ("entry", "exit"):
+        OUTPUT_DIR = SCRIPT_DIR / "output" / "counter" / args.mode
+    else:
+        OUTPUT_DIR = SCRIPT_DIR / "output" / "counter"
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    COUNT_FILE  = OUTPUT_DIR / "count.json"
+    FRAME_FILE  = OUTPUT_DIR / "frame.jpg"
+    STATUS_FILE = OUTPUT_DIR / "status.json"
+    HOURLY_FILE = OUTPUT_DIR / "hourly.json"
+    print(f"[Counter] Mode: {args.mode} | Output: {OUTPUT_DIR}")
 
     # Load RTSP from config if not provided directly
     rtsp_url = args.rtsp

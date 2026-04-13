@@ -21,7 +21,10 @@
       "input": "HDMI1"
     }
   ],
-  "cameras": [],
+  "cameras": [
+    { "id": "cam-1", "name": "C\u00e2mera Entrada", "ip": "TODO", "user": "admin", "password": "TODO" },
+    { "id": "cam-2", "name": "C\u00e2mera Sa\u00edda",   "ip": "TODO", "user": "admin", "password": "TODO" }
+  ],
   "pjlink": {
     "port": 4352,
     "password": "",
@@ -68,7 +71,7 @@
     "heatmapDecay": 0.999,
     "zones": [],
     "reid": {
-      "enabled": true,
+      "enabled": false,
       "model": "osnet_x0_25",
       "thresholds": {
         "sameZone": 0.4,
@@ -94,8 +97,21 @@
       "timeMinutes": 15,
       "uniformThreshold": 0.3
     },
+    "cameras": ["cam-1", "cam-2"],
+    "model": "yolov8n",
     "counter": {
-      "enabled": true
+      "enabled": true,
+      "mode": "dual",
+      "entry": {
+        "camera": "cam-1",
+        "line": "TODO",
+        "confidence": 0.4
+      },
+      "exit": {
+        "camera": "cam-2",
+        "line": "TODO",
+        "confidence": 0.4
+      }
     }
   },
   "server": {
