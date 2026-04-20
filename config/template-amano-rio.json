@@ -135,7 +135,7 @@
     }
   },
   "cv": {
-    "enabled": false,
+    "enabled": true,
     "hardware": "auto",
     "model": "yolov8n",
     "imgsz": null,
@@ -186,7 +186,7 @@
       "cam-2"
     ],
     "counter": {
-      "enabled": false,
+      "enabled": true,
       "mode": "dual",
       "entry": {
         "camera": "cam-2",
