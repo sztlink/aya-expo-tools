@@ -48,8 +48,10 @@ if (setupMode) {
   clusters.cameras = require('./clusters/cameras');
 
   // Conditional
+  // CV routes/manager devem existir mesmo quando cv.enabled = false,
+  // para a UI continuar consultando /api/cv/status sem receber 404 HTML.
+  clusters.cv = require('./clusters/cv');
   if (config.cv?.enabled !== false) {
-    clusters.cv = require('./clusters/cv');
     clusters.data = require('./clusters/data');
   }
 
