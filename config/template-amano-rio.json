@@ -14,19 +14,85 @@
     }
   },
   "projectors": [
-    { "id": "proj-1", "name": "Projetor 1", "ip": "10.0.0.101", "model": "", "input": "HDMI1" },
-    { "id": "proj-2", "name": "Projetor 2", "ip": "10.0.0.102", "model": "", "input": "HDMI1" },
-    { "id": "proj-3", "name": "Projetor 3", "ip": "10.0.0.103", "model": "", "input": "HDMI1" },
-    { "id": "proj-4", "name": "Projetor 4", "ip": "10.0.0.104", "model": "", "input": "HDMI1" },
-    { "id": "proj-5", "name": "Projetor 5", "ip": "10.0.0.105", "model": "", "input": "HDMI1" },
-    { "id": "proj-6", "name": "Projetor 6", "ip": "10.0.0.106", "model": "", "input": "HDMI1" },
-    { "id": "proj-7", "name": "Projetor 7", "ip": "10.0.0.107", "model": "", "input": "HDMI1" },
-    { "id": "proj-8", "name": "Projetor 8", "ip": "10.0.0.108", "model": "", "input": "HDMI1" },
-    { "id": "proj-9", "name": "Projetor 9", "ip": "10.0.0.109", "model": "", "input": "HDMI1" }
+    {
+      "id": "proj-1",
+      "name": "Projetor 1",
+      "ip": "10.0.0.101",
+      "model": "",
+      "input": "HDMI1"
+    },
+    {
+      "id": "proj-2",
+      "name": "Projetor 2",
+      "ip": "10.0.0.102",
+      "model": "",
+      "input": "HDMI1"
+    },
+    {
+      "id": "proj-3",
+      "name": "Projetor 3",
+      "ip": "10.0.0.103",
+      "model": "",
+      "input": "HDMI1"
+    },
+    {
+      "id": "proj-4",
+      "name": "Projetor 4",
+      "ip": "10.0.0.104",
+      "model": "",
+      "input": "HDMI1"
+    },
+    {
+      "id": "proj-5",
+      "name": "Projetor 5",
+      "ip": "10.0.0.105",
+      "model": "",
+      "input": "HDMI1"
+    },
+    {
+      "id": "proj-6",
+      "name": "Projetor 6",
+      "ip": "10.0.0.106",
+      "model": "",
+      "input": "HDMI1"
+    },
+    {
+      "id": "proj-7",
+      "name": "Projetor 7",
+      "ip": "10.0.0.107",
+      "model": "",
+      "input": "HDMI1"
+    },
+    {
+      "id": "proj-8",
+      "name": "Projetor 8",
+      "ip": "10.0.0.108",
+      "model": "",
+      "input": "HDMI1"
+    },
+    {
+      "id": "proj-9",
+      "name": "Projetor 9",
+      "ip": "10.0.0.109",
+      "model": "",
+      "input": "HDMI1"
+    }
   ],
   "cameras": [
-    { "id": "cam-1", "name": "Câmera Entrada", "ip": "10.0.0.201", "user": "admin", "password": "AC00ac00ac00ac" },
-    { "id": "cam-2", "name": "Câmera Saída", "ip": "10.0.0.202", "user": "admin", "password": "AC00ac00ac00ac" }
+    {
+      "id": "cam-1",
+      "name": "Câmera Entrada",
+      "ip": "10.0.0.201",
+      "user": "admin",
+      "password": "AC00ac00ac00ac"
+    },
+    {
+      "id": "cam-2",
+      "name": "Câmera Saída",
+      "ip": "10.0.0.202",
+      "user": "admin",
+      "password": "AC00ac00ac00ac"
+    }
   ],
   "pjlink": {
     "port": 4352,
@@ -36,13 +102,31 @@
   "schedule": {
     "timezone": "America/Sao_Paulo",
     "days": {
-      "mon": { "open": "07:30", "close": "20:30" },
+      "mon": {
+        "open": "07:30",
+        "close": "20:30"
+      },
       "tue": null,
-      "wed": { "open": "07:30", "close": "20:30" },
-      "thu": { "open": "07:30", "close": "20:30" },
-      "fri": { "open": "07:30", "close": "20:30" },
-      "sat": { "open": "07:30", "close": "20:30" },
-      "sun": { "open": "07:30", "close": "20:30" }
+      "wed": {
+        "open": "07:30",
+        "close": "20:30"
+      },
+      "thu": {
+        "open": "07:30",
+        "close": "20:30"
+      },
+      "fri": {
+        "open": "07:30",
+        "close": "20:30"
+      },
+      "sat": {
+        "open": "07:30",
+        "close": "20:30"
+      },
+      "sun": {
+        "open": "07:30",
+        "close": "20:30"
+      }
     }
   },
   "cv": {
@@ -81,12 +165,23 @@
     },
     "staffFilter": {
       "enabled": false,
-      "colorHSV": [120, 50, 50],
-      "colorRange": [20, 80, 80],
+      "colorHSV": [
+        120,
+        50,
+        50
+      ],
+      "colorRange": [
+        20,
+        80,
+        80
+      ],
       "timeMinutes": 15,
       "uniformThreshold": 0.3
     },
-    "cameras": ["cam-1", "cam-2"],
+    "cameras": [
+      "cam-1",
+      "cam-2"
+    ],
     "counter": {
       "enabled": true,
       "mode": "dual",
@@ -94,13 +189,13 @@
         "camera": "cam-2",
         "line": "406,266,501,316",
         "confidence": 0.4,
-        "interval": 1
+        "interval": 0.25
       },
       "exit": {
         "camera": "cam-2",
         "line": "273,181,209,207",
         "confidence": 0.4,
-        "interval": 1
+        "interval": 0.25
       }
     },
     "fusion": {
