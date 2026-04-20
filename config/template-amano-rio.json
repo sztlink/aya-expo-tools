@@ -143,9 +143,8 @@
       {
         "id": "sala-imersiva",
         "name": "Sala Imersiva",
-        "strategy": "fused",
+        "strategy": "max",
         "cameras": {
-          "cam-1": "full",
           "cam-2": "full"
         },
         "alert": {}
@@ -179,7 +178,6 @@
       "uniformThreshold": 0.3
     },
     "cameras": [
-      "cam-1",
       "cam-2"
     ],
     "counter": {
