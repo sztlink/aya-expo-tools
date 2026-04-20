@@ -173,7 +173,7 @@ dir C:\aya-expo-tools\clusters\cv\python\models
 # Should show: yolov8l.pt, osnet_x0_25.onnx
 
 # 5. Check server
-curl http://localhost:3000/health
+curl http://localhost:3000/api/health
 # Should output: {"status":"ok"}
 ```
 
@@ -186,6 +186,8 @@ curl http://localhost:3000/health
 - **Keep a backup pendrive**: Always have 2 copies for critical expos
 - **Label clearly**: "AYA EXPO TOOLS v2.0 — DO NOT FORMAT"
 - **Update regularly**: Re-prepare pendrive after major repo updates
+- **Field lesson from Amano Rio (2026-04)**: copying only `python-venv/` is not enough. The destination machine must also have a valid Python 3.11 base installation compatible with the venv, or `pyvenv.cfg` will break CV startup.
+- **Do not trust only the installer finish screen**: after installation, always validate `venv\Scripts\python.exe`, `torch.cuda.is_available()` and the actual `node index.js --config=<slug>` runtime before leaving the site.
 
 ---
 

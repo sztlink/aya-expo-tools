@@ -78,9 +78,25 @@ if (setupMode) {
     writeLog: core.writeLog,
     broadcast: core.broadcast,
   });
-  require('./core/routes/config')(app, config);
+  require('./core/routes/config')(app, {
+    config,
+    configName,
+    configPath: config._path,
+    projectors: clusters.equipment?.projectors || null,
+    cameras: clusters.cameras?.cameras || null,
+    scheduler,
+    cvManager: clusters.cv?.cvManager || null,
+  });
   const network = require('./core/network');
   const serverHealth = require('./core/server-health');
+
+  if (clusters.communication?.portalSync) {
+    clusters.communication.portalSync.scheduler = scheduler;
+    clusters.communication.portalSync.readLog = core.readLog;
+    clusters.communication.portalSync.session = core.session;
+    clusters.communication.portalSync.serverHealth = serverHealth;
+  }
+
   require('./core/routes/health')(app, {
     config,
     network,
@@ -94,6 +110,14 @@ if (setupMode) {
   require('./core/routes/archive')(app, config);
 
   // ── Start ────────────────────────────────────────────────
-  core.start(config, { app, server });
-  scheduler.start();
+  core.start(config, { app, server }, {
+    projectors: clusters.equipment?.projectors || null,
+    cameras: clusters.cameras?.cameras || null,
+    scheduler,
+    portalSync: clusters.communication?.portalSync || null,
+    cvManager: clusters.cv?.cvManager || null,
+    cvLogger: clusters.data?.cvLogger || null,
+    serverHealth,
+    timelapse: clusters.cameras?.timelapse || null,
+  });
 }

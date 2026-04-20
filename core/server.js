@@ -185,12 +185,12 @@ function start(config, { app, server }, managers = {}) {
     if (managers.projectors) managers.projectors.startPolling(config.pjlink?.pollInterval || 30000);
     if (managers.cameras) managers.cameras.startPolling(30000);
     if (managers.scheduler) managers.scheduler.start();
+    if (managers.serverHealth) managers.serverHealth.start();
     if (managers.portalSync) managers.portalSync.start();
     if (managers.cvManager) {
       managers.cvManager.start();
       if (managers.cvLogger) managers.cvLogger.start(managers.cvManager);
     }
-    if (managers.serverHealth) managers.serverHealth.start();
     if (managers.timelapse) managers.timelapse.start();
   });
 

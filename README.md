@@ -74,6 +74,21 @@ Portal AYA (REMOTO — portal.aya.cx)
 - `docs/AUDIO-DRIVER-QUIRK.md` — driver Creative ignora API escalar de volume
 - `docs/CHANGELOG-2026-03-24.md` — migração TVs WiFi→Ethernet, fix de áudio, smart plugs Tuya
 
+### Amano Rio — CCBB Rio (abr/2026)
+
+| Componente | Quantidade | Protocolo |
+|------------|-----------|-----------|
+| Projetores | 9 | PJLink |
+| Câmeras | 2 | RTSP + CV |
+| Áudio | 1 master | Windows Core Audio |
+| GPU CV | RTX 3090 | YOLO v8 |
+| Portal sync | 1 | push HTTP |
+
+**Notas operacionais:**
+- preview de câmera no Portal vem do frame do CV (`1920x1080`), não de `snapshot.cgi`;
+- `cam-2` é o counter oficial de fluxo;
+- a zona `sala-imersiva` está preparada para `strategy: "fused"`, hoje com fallback seguro para `max` até a calibração.
+
 ---
 
 ## Setup Rápido
@@ -82,7 +97,12 @@ Portal AYA (REMOTO — portal.aya.cx)
 git clone https://github.com/sztlink/aya-expo-tools.git
 cd aya-expo-tools
 npm install
-npm start
+node index.js
+```
+
+Em produção, preferir:
+```bash
+node index.js --config=<slug>
 ```
 
 Abre `http://localhost:3000` no browser.
@@ -329,8 +349,11 @@ Requer credenciais em `config/tuya-cloud.json` (Access ID + Secret do platform.t
 | Arquivo | Conteúdo |
 |---------|----------|
 | `docs/STRATEGY.md` | Estratégia de implementação (4 ciclos) |
+| `docs/CONTRATO-OPERACIONAL.md` | Fronteira operacional do sistema: Core / Add-on / Lab, sem depender do szt.link |
 | `docs/AUDIO-DRIVER-QUIRK.md` | Bug de volume em chips Creative — causa e fix |
 | `docs/CHANGELOG-2026-03-24.md` | Migração TVs Ethernet, fix de áudio, smart plugs Tuya |
+| `docs/CHANGELOG-2026-04-18.md` | Amano Rio, hardening de campo, CV HD no Portal e fusão geométrica MVP |
+| `docs/CHANGELOG-2026-04-19.md` | Validação final de campo: `proj-2` resolvido e reboot/persistência validados |
 
 ---
 

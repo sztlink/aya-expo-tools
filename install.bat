@@ -199,21 +199,23 @@ if %errorLevel% equ 0 (
 )
 echo.
 
-:: ─── Step 6: Install npm dependencies ────────────────────────
-echo   [6/8] Instalando dependencias Node.js...
-echo         Usando Node.js portable em: %INSTALL_DIR%\node-portable
+:: ─── Step 6: node_modules (ja vieram do pendrive no step 1) ────
+echo   [6/8] Verificando dependencias Node.js...
 echo.
 
-cd /d "%INSTALL_DIR%"
-"%INSTALL_DIR%\node-portable\npm.cmd" install --production --no-audit --no-fund 2>nul
-if %errorLevel% neq 0 (
-  echo   [!] ERRO ao instalar dependencias NPM.
-  echo       Verifique se o Node.js portable esta OK.
-  pause
-  exit /b 1
+if exist "%INSTALL_DIR%\node_modules" (
+  echo         node_modules encontrado (veio do pendrive). OK.
+) else (
+  echo         node_modules nao encontrado. Instalando via npm...
+  cd /d "%INSTALL_DIR%"
+  "%INSTALL_DIR%\node-portable\npm.cmd" install --production --no-audit --no-fund 2>nul
+  if %errorLevel% neq 0 (
+    echo   [!] ERRO ao instalar dependencias NPM.
+    pause
+    exit /b 1
+  )
+  echo         Dependencias instaladas.
 )
-
-echo         Dependencias instaladas com sucesso.
 echo.
 
 :: ─── Step 7: Task Scheduler ──────────────────────────────────
@@ -224,7 +226,7 @@ set NODE_EXE=%INSTALL_DIR%\node-portable\node.exe
 set INDEX_JS=%INSTALL_DIR%\index.js
 
 :: Detectar qual config usar (amano-rio.json se existir, senao first available)
-set CONFIG_FILE=amano-rio
+set CONFIG_FILE=template-amano-rio
 if not exist "%INSTALL_DIR%\config\%CONFIG_FILE%.json" (
   echo         [!] AVISO: config/amano-rio.json nao encontrado.
   echo             Use o primeiro config disponivel ou crie manualmente.

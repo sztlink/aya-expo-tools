@@ -157,7 +157,10 @@
 <body>
 
 <div class="header">
-  <div class="header-left"><a href="/" style="text-decoration:none;color:var(--text-dim);font-size:13px;">← Início</a></div>
+  <div class="header-left" style="display:flex;gap:12px;align-items:center;">
+    <a href="/" style="text-decoration:none;color:var(--text-dim);font-size:12px;">Dashboard</a>
+    <a href="/cv.html" style="text-decoration:none;color:var(--text-dim);font-size:12px;">← CV</a>
+  </div>
   <div class="header-center"><span style="font-size:14px;font-weight:600;">Calibração CV</span> <span id="expo-name" style="font-size:12px;color:var(--text-dim);margin-left:8px;"></span></div>
   <div class="header-right"></div>
 </div>
@@ -181,15 +184,24 @@
       </div>
 
       <div id="line-panel" style="display:none;">
-        <div class="section-label">Linha de contagem</div>
+        <div class="section-label">Linhas de contagem</div>
+        <div class="tool-row" style="margin-bottom:8px;">
+          <button class="tool-btn active" id="line-role-entry" onclick="setLineRole('entry')">Porta 1</button>
+          <button class="tool-btn" id="line-role-exit" onclick="setLineRole('exit')">Porta 2</button>
+        </div>
         <div class="line-box">
-          <div class="line-cam" id="line-cam">—</div>
+          <div class="line-cam" id="line-active-label">Entrada — câmera: —</div>
           <div class="line-coords" id="line-coords">não configurada</div>
-          <button class="btn-xs clear" onclick="clearLine()" style="margin-top:4px;">Limpar</button>
+          <button class="btn-xs clear" onclick="clearLine()" style="margin-top:4px;">Limpar linha ativa</button>
+        </div>
+        <div class="line-box">
+          <div class="line-cam">Resumo</div>
+          <div class="line-coords" id="line-entry-summary">Entrada: —</div>
+          <div class="line-coords" id="line-exit-summary">Saída: —</div>
         </div>
         <div style="font-size:11px;color:var(--text-dimmer);line-height:1.5;">
-          Clique em 2 pontos para definir a linha.<br>
-          Cima→baixo = <span style="color:var(--green)">entrada</span> · Baixo→cima = <span style="color:var(--red)">saída</span>
+          Clique em 2 pontos para definir a <strong>linha ativa</strong>.<br>
+          <span style="color:#22c55e">Porta 1</span> e <span style="color:#ef4444">Porta 2</span> — ambas bidirecionais.
         </div>
       </div>
 
@@ -236,7 +248,63 @@ let currentCam = null;
 let currentTool = 'zone';
 let activeZoneId = null;
 let drawing = [];      // pontos em construção (zona)
-let linePoints = [];   // pontos da linha (max 2)
+let linePoints = [];   // pontos da linha ativa (max 2)
+let lineRole = 'entry';
+
+function getLineLabel(role) {
+  return role === 'exit' ? 'Porta 2' : 'Porta 1';
+}
+
+function getLineColor(role) {
+  return role === 'exit' ? '#ef4444' : '#22c55e';
+}
+
+function ensureCounterConfig(forceDual = false) {
+  if (!config.cv) config.cv = {};
+  const current = config.cv.counter || {};
+  const shouldBeDual = forceDual || current.mode === 'dual' || !!current.entry || !!current.exit;
+
+  if (shouldBeDual) {
+    const baseCamera = current.camera || current.entry?.camera || current.exit?.camera || currentCam || 'cam-2';
+    const baseLine = current.line || current.entry?.line || current.exit?.line || '600,360,860,360';
+    const baseConfidence = current.confidence ?? current.entry?.confidence ?? current.exit?.confidence ?? 0.4;
+    const baseInterval = current.interval ?? current.entry?.interval ?? current.exit?.interval ?? 1;
+
+    config.cv.counter = {
+      enabled: current.enabled !== false,
+      mode: 'dual',
+      entry: {
+        camera: current.entry?.camera || baseCamera,
+        line: current.entry?.line || baseLine,
+        confidence: current.entry?.confidence ?? baseConfidence,
+        interval: current.entry?.interval ?? baseInterval,
+      },
+      exit: {
+        camera: current.exit?.camera || baseCamera,
+        line: current.exit?.line || baseLine,
+        confidence: current.exit?.confidence ?? baseConfidence,
+        interval: current.exit?.interval ?? baseInterval,
+      },
+    };
+  } else {
+    config.cv.counter = {
+      enabled: current.enabled !== false,
+      mode: 'single',
+      camera: current.camera || currentCam || 'cam-2',
+      line: current.line || '600,360,860,360',
+      confidence: current.confidence ?? 0.4,
+      interval: current.interval ?? 1,
+    };
+  }
+
+  return config.cv.counter;
+}
+
+function getLineConfig(role = lineRole) {
+  const counter = ensureCounterConfig(false);
+  if (counter.mode === 'dual') return counter[role] || null;
+  return counter;
+}
 
 // ── Init ───────────────────────────────────────────────────────────────────
 async function init() {
@@ -244,6 +312,7 @@ async function init() {
   config = await res.json();
   if (!config.cv) config.cv = {};
   if (!config.cv.zones) config.cv.zones = [];
+  ensureCounterConfig(config.cv?.counter?.mode === 'dual' || !!config.cv?.counter?.entry || !!config.cv?.counter?.exit);
 
   document.getElementById('expo-name').textContent = config.exhibition?.name || '';
 
@@ -271,6 +340,7 @@ function selectCam(id) {
   document.querySelectorAll('.cam-tab').forEach(t =>
     t.classList.toggle('active', t.textContent.trim() === id));
   refreshFrame();
+  renderLine();
   renderOverlay();
   updateHint();
 }
@@ -385,12 +455,21 @@ function removeCamFromZone(zoneId, camId) {
 
 // ── Linha ──────────────────────────────────────────────────────────────────
 function clickLine(fx, fy) {
+  const counter = ensureCounterConfig(true);
   linePoints.push([fx, fy]);
   renderOverlay();
   if (linePoints.length === 2) {
-    if (!config.cv.counter) config.cv.counter = {};
-    config.cv.counter.camera = currentCam;
-    config.cv.counter.line = linePoints.map(p => p.join(',')).join(',');
+    const line = linePoints.map(p => p.join(',')).join(',');
+    if (counter.mode === 'dual') {
+      if (!counter[lineRole]) counter[lineRole] = {};
+      counter[lineRole].camera = currentCam;
+      counter[lineRole].line = line;
+      counter[lineRole].confidence = counter[lineRole].confidence ?? 0.4;
+      counter[lineRole].interval = counter[lineRole].interval ?? 1;
+    } else {
+      counter.camera = currentCam;
+      counter.line = line;
+    }
     linePoints = [];
     renderLine();
     renderOverlay();
@@ -399,7 +478,12 @@ function clickLine(fx, fy) {
 }
 
 function clearLine() {
-  if (config.cv?.counter) {
+  const counter = ensureCounterConfig(currentTool === 'line');
+  if (counter.mode === 'dual') {
+    if (!counter[lineRole]) counter[lineRole] = {};
+    delete counter[lineRole].line;
+    delete counter[lineRole].camera;
+  } else if (config.cv?.counter) {
     delete config.cv.counter.line;
     delete config.cv.counter.camera;
   }
@@ -502,41 +586,61 @@ function renderOverlay() {
     });
   }
 
-  // Linha de contagem
-  const lineStr = config.cv?.counter?.line;
-  const lineCam = config.cv?.counter?.camera;
-  if (lineStr && lineCam === currentCam) {
-    const [x1, y1, x2, y2] = lineStr.split(',').map(Number);
-    const [cx1, cy1] = f2c(x1, y1);
-    const [cx2, cy2] = f2c(x2, y2);
-    drawLine(ctx, cx1, cy1, cx2, cy2, '#f59e0b');
+  // Linhas de contagem
+  const counterCfg = ensureCounterConfig(false);
+  if (counterCfg.mode === 'dual') {
+    ['entry', 'exit'].forEach(role => {
+      const cfg = counterCfg[role];
+      if (!cfg?.line || cfg.camera !== currentCam) return;
+      const [x1, y1, x2, y2] = cfg.line.split(',').map(Number);
+      const [cx1, cy1] = f2c(x1, y1);
+      const [cx2, cy2] = f2c(x2, y2);
+      drawLine(
+        ctx,
+        cx1,
+        cy1,
+        cx2,
+        cy2,
+        getLineColor(role),
+        role === 'entry' ? 'Porta 1' : 'Porta 2',
+        role === lineRole ? 3 : 2,
+        role,
+      );
+    });
+  } else {
+    const lineStr = counterCfg?.line;
+    const lineCam = counterCfg?.camera;
+    if (lineStr && lineCam === currentCam) {
+      const [x1, y1, x2, y2] = lineStr.split(',').map(Number);
+      const [cx1, cy1] = f2c(x1, y1);
+      const [cx2, cy2] = f2c(x2, y2);
+      drawLine(ctx, cx1, cy1, cx2, cy2, '#f59e0b', 'entrada ↓', 2, 'entry');
+    }
   }
   if (linePoints.length === 1) {
     const [cx, cy] = f2c(linePoints[0][0], linePoints[0][1]);
     ctx.beginPath(); ctx.arc(cx, cy, 5, 0, Math.PI * 2);
-    ctx.fillStyle = '#f59e0b'; ctx.fill();
+    ctx.fillStyle = getLineColor(lineRole); ctx.fill();
   }
 }
 
-function drawLine(ctx, x1, y1, x2, y2, color) {
-  ctx.strokeStyle = color; ctx.lineWidth = 2;
+function drawLine(ctx, x1, y1, x2, y2, color, label = 'entrada ↓', width = 2, role = 'entry') {
+  ctx.strokeStyle = color; ctx.lineWidth = width;
   ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
   [[x1,y1],[x2,y2]].forEach(([x,y]) => {
     ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI*2);
     ctx.fillStyle = color; ctx.fill();
   });
-  // Seta de direção (perpendicular, aponta para baixo = entrada)
   const mx = (x1+x2)/2, my = (y1+y2)/2;
-  const a = Math.atan2(y2-y1, x2-x1) + Math.PI/2;
+  const a = Math.atan2(y2-y1, x2-x1) + (role === 'exit' ? -Math.PI/2 : Math.PI/2);
   ctx.beginPath();
   ctx.moveTo(mx+Math.cos(a)*10, my+Math.sin(a)*10);
   ctx.lineTo(mx+Math.cos(a-2.4)*6, my+Math.sin(a-2.4)*6);
   ctx.lineTo(mx+Math.cos(a+2.4)*6, my+Math.sin(a+2.4)*6);
   ctx.closePath(); ctx.fillStyle = color; ctx.fill();
-  // Label
   ctx.fillStyle = color; ctx.font = '11px Inter, sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('entrada ↓', mx, my - 12);
+  ctx.fillText(label, mx, my - 12);
 }
 
 // ── Zone list render ───────────────────────────────────────────────────────
@@ -585,13 +689,14 @@ function renderZoneList() {
       </div>`;
     }).join('');
 
-    const strategyOptions = ['max','sum','single'].map(s =>
+    const strategyOptions = ['max','sum','single','fused'].map(s =>
       `<option value="${s}" ${s===strategy?'selected':''}>${s}</option>`).join('');
 
     const strategyHints = {
-      max: 'Mesmo espaço físico, câmeras complementares — evita dupla contagem',
+      max: 'Mesmo espaço físico, câmeras complementares — heurística conservadora',
       sum: 'Espaços distintos sem sobreposição — soma os públicos',
       single: 'Uma única câmera cobre esta zona',
+      fused: 'Mesmo espaço físico com fusão geométrica — deduplica 2 câmeras calibradas',
     };
 
     card.innerHTML = `
@@ -617,12 +722,28 @@ function renderZoneList() {
 }
 
 function renderLine() {
-  const line = config.cv?.counter?.line;
-  const cam = config.cv?.counter?.camera;
-  document.getElementById('line-cam').textContent = cam ? `Câmera: ${cam}` : 'câmera: —';
+  const counter = ensureCounterConfig(currentTool === 'line');
+  const dual = counter.mode === 'dual';
+  const active = dual ? (counter[lineRole] || {}) : counter;
+
+  document.getElementById('line-role-entry').classList.toggle('active', lineRole === 'entry');
+  document.getElementById('line-role-exit').classList.toggle('active', lineRole === 'exit');
+
+  document.getElementById('line-active-label').textContent = `${getLineLabel(lineRole)} — câmera: ${active.camera || '—'}`;
+
   const el = document.getElementById('line-coords');
-  el.textContent = line || 'não configurada';
-  el.className = 'line-coords' + (line ? ' set' : '');
+  el.textContent = active.line || 'não configurada';
+  el.className = 'line-coords' + (active.line ? ' set' : '');
+
+  const entryEl = document.getElementById('line-entry-summary');
+  const exitEl = document.getElementById('line-exit-summary');
+  const entry = dual ? (counter.entry || {}) : { camera: counter.camera, line: counter.line };
+  const exit = dual ? (counter.exit || {}) : {};
+
+  entryEl.textContent = `Entrada: ${entry.camera || '—'} · ${entry.line || 'não configurada'}`;
+  entryEl.className = 'line-coords' + (entry.line ? ' set' : '');
+  exitEl.textContent = `Saída: ${exit.camera || '—'} · ${exit.line || 'não configurada'}`;
+  exitEl.className = 'line-coords' + (exit.line ? ' set' : '');
 }
 
 // ── Zone management ────────────────────────────────────────────────────────
@@ -657,9 +778,10 @@ function setStrategy(zoneId, value) {
   const zone = getZone(zoneId);
   if (zone) zone.strategy = value;
   const hints = {
-    max: 'Mesmo espaço físico, câmeras complementares — evita dupla contagem',
+    max: 'Mesmo espaço físico, câmeras complementares — heurística conservadora',
     sum: 'Espaços distintos sem sobreposição — soma os públicos',
     single: 'Uma única câmera cobre esta zona',
+    fused: 'Mesmo espaço físico com fusão geométrica — deduplica 2 câmeras calibradas',
   };
   const el = document.getElementById(`sh-${zoneId}`);
   if (el) el.textContent = hints[value] || '';
@@ -688,16 +810,41 @@ function setCamFull(zoneId, camId) {
 // ── Ferramentas ────────────────────────────────────────────────────────────
 function setTool(tool) {
   currentTool = tool; drawing = []; linePoints = [];
+  if (tool === 'line') {
+    ensureCounterConfig(true);
+    const cfg = getLineConfig(lineRole);
+    if (cfg?.camera && cfg.camera !== currentCam) currentCam = cfg.camera;
+  }
   updateToolButtons();
   document.getElementById('zone-panel').style.display = tool === 'zone' ? '' : 'none';
   document.getElementById('line-panel').style.display = tool === 'line' ? '' : 'none';
   document.getElementById('canvas-wrap').className = 'canvas-wrap' + (currentCam ? ' drawing' : '');
+  renderLine();
+  if (currentCam) {
+    document.querySelectorAll('.cam-tab').forEach(t =>
+      t.classList.toggle('active', t.textContent.trim() === currentCam));
+    refreshFrame();
+  }
   renderOverlay(); updateHint();
 }
 
 function updateToolButtons() {
   document.getElementById('tool-zone').classList.toggle('active', currentTool === 'zone');
   document.getElementById('tool-line').classList.toggle('active', currentTool === 'line');
+}
+
+function setLineRole(role) {
+  ensureCounterConfig(true);
+  lineRole = role;
+  linePoints = [];
+  const cfg = getLineConfig(role);
+  if (cfg?.camera && cfg.camera !== currentCam) {
+    selectCam(cfg.camera);
+    return;
+  }
+  renderLine();
+  renderOverlay();
+  updateHint();
 }
 
 function cancelDrawing() { drawing = []; linePoints = []; renderOverlay(); updateHint(); }
@@ -710,7 +857,10 @@ function updateHint() {
       drawing: n => `${n} ponto${n>1?'s':''} — continue ou clique no 1º ponto para fechar`,
       done: 'Continue clicando ou clique no 1º ponto (branco) para fechar',
     },
-    line: ['Clique no 1º ponto da linha','Clique no 2º ponto para concluir'],
+    line: {
+      entry: ['Clique no 1º ponto da Porta 1','Clique no 2º ponto da Porta 1'],
+      exit: ['Clique no 1º ponto da Porta 2','Clique no 2º ponto da Porta 2'],
+    },
   };
   let text = '';
   if (currentTool === 'zone') {
@@ -719,7 +869,7 @@ function updateHint() {
     else if (drawing.length < 3) text = hints.zone.drawing(drawing.length);
     else text = hints.zone.done;
   } else {
-    text = hints.line[linePoints.length] || '';
+    text = hints.line[lineRole]?.[linePoints.length] || '';
   }
   document.getElementById('hint').textContent = text;
 }

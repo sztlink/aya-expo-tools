@@ -1,7 +1,7 @@
 'use strict';
 
 const { CameraManager } = require('./cameras');
-const timelapse = require('./timelapse');
+const { TimelapseCapture } = require('./timelapse');
 
 module.exports = {
   name: 'cameras',
@@ -9,7 +9,7 @@ module.exports = {
 
   register(app, config, clusters) {
     this.cameras = new CameraManager(config);
-    this.timelapse = timelapse;
+    this.timelapse = new TimelapseCapture(this.cameras);
     this.config = config;
     require('./routes')(app, this);
   },

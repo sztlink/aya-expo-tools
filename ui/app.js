@@ -125,10 +125,10 @@ function navigateTo(path) {
 function Nav({ currentRoute, wsConnected, onAboutClick }) {
   const links = [
     { path: '/dashboard', label: 'Dashboard' },
-    { path: '/cv', label: 'CV' },
-    { path: '/selftest', label: 'Auto-Teste' },
+    { href: '/cv.html', label: 'CV' },
+    { href: '/config.html', label: 'Configuração' },
+    { href: '/server.html', label: 'Servidor' },
     { path: '/setup', label: 'Setup' },
-    { path: '/archive', label: 'Arquivar' }
   ];
 
   return html`
@@ -159,9 +159,9 @@ function Nav({ currentRoute, wsConnected, onAboutClick }) {
       <div class="nav-items" style="display: flex; gap: 0.5rem; flex: 1;">
         ${links.map(link => html`
           <a 
-            href="${'#' + link.path}"
+            href="${link.href || '#' + link.path}"
             class="nav-item"
-            data-active=${currentRoute === link.path}
+            data-active=${link.path ? currentRoute === link.path : false}
           >
             ${link.label}
           </a>
@@ -273,13 +273,15 @@ function App() {
     return html`<${Splash} />`;
   }
 
+  // Redirect broken SPA routes to working standalone pages
+  if (route === '/cv') { location.href = '/cv.html'; return null; }
+  if (route === '/selftest') { location.href = '/config.html'; return null; }
+  if (route === '/archive') { location.href = '/server.html'; return null; }
+
   // Render current page
   let PageComponent = null;
   if (route === '/dashboard') PageComponent = Dashboard;
-  else if (route === '/cv') PageComponent = CV;
-  else if (route === '/selftest') PageComponent = SelfTest;
   else if (route === '/setup') PageComponent = Setup;
-  else if (route === '/archive') PageComponent = Archive;
 
   return html`
     <div>

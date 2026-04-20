@@ -19,13 +19,14 @@ const fs = require('fs')
 const path = require('path')
 const network = require('../../core/network')
 const tv = require('../equipment/tv')
+const audio = require('../equipment/audio')
 const cvLogger = require('../data/cv-logger')
 const cvReport = require('../data/cv-report')
 
 // Carrega .env local (se existir) sem dependência de dotenv
 // Formato suportado: KEY=VALUE por linha, # para comentários
 ;(function loadEnv() {
-  const envPath = path.join(__dirname, '..', '.env')
+  const envPath = path.join(__dirname, '..', '..', '.env')
   if (!fs.existsSync(envPath)) return
   try {
     const lines = fs.readFileSync(envPath, 'utf8').split('\n')
@@ -196,9 +197,10 @@ class PortalSync {
       ) : undefined,
     }
 
-    // Zones + dwell (from getStatus)
+    // Zones + dwell + fusion debug (from getStatus)
     if (status.zones) payload.zones = status.zones
     if (status.dwell) payload.dwell = status.dwell
+    if (status.fusion) payload.fusion = status.fusion
 
     // Daily summary (on-the-fly from cv-logger) — included in every push, lightweight
     try {
@@ -228,18 +230,21 @@ class PortalSync {
       } catch { /* report not ready */ }
     }
 
-    // Heatmap: push 1x per hour (base64 PNG of first CV camera)
+    // Heatmap: push 1x per hour — por câmera + legado (primeira câmera)
     if (!this._lastHeatmapPush || now - this._lastHeatmapPush > 3600_000) {
       const cvCams = this.config.cv?.cameras || []
-      const camId = cvCams[0] || null
-      if (camId) {
+      const perCamera = {}
+      for (const camId of cvCams) {
         const buffer = this.cvManager.getHeatmap(camId)
-        if (buffer) {
-          payload.heatmapBase64 = buffer.toString('base64')
-          payload.heatmapCamId = camId
-          payload.heatmapUpdatedAt = new Date().toISOString()
-          this._lastHeatmapPush = now
-        }
+        if (buffer) perCamera[camId] = buffer.toString('base64')
+      }
+      if (Object.keys(perCamera).length > 0) {
+        payload.heatmapPerCamera = perCamera
+        const firstId = Object.keys(perCamera)[0]
+        payload.heatmapBase64 = perCamera[firstId]
+        payload.heatmapCamId = firstId
+        payload.heatmapUpdatedAt = new Date().toISOString()
+        this._lastHeatmapPush = now
       }
     }
 
@@ -269,7 +274,7 @@ class PortalSync {
       cameras: this.cameras.getAllStatus().length,
       tvs: (this.config.tvs || []).length,
       internet,
-      schedule: this.scheduler.enabled,
+      schedule: this.scheduler ? this.scheduler.enabled : false,
       timestamp: new Date().toISOString(),
     }
 
@@ -285,9 +290,19 @@ class PortalSync {
       cv: this.cvManager ? this._buildCvPayload() : null,
       server: this.serverHealth ? this.serverHealth.getCurrent() : null,
       schedule: this.scheduler ? this.scheduler.getStatus() : null,
+      audio: (() => {
+        try {
+          const level = audio.getVolume()
+          return { level, muted: level === 0 }
+        } catch {
+          return null
+        }
+      })(),
     }
 
     // Snapshots de TODAS as câmeras por push (otimização 4G: portal serve do cache)
+    // Preferir frame do CV (RTSP principal, 16:9/1080p) quando disponível.
+    // Fallback para snapshot HTTP SD da câmera quando o CV ainda não estiver rodando.
     const cams = this.cameras.getAllStatus()
     if (cams.length > 0) {
       const snapshots = {}
@@ -295,7 +310,10 @@ class PortalSync {
         const cam = this.cameras.get(camStatus.id)
         if (!cam) return
         try {
-          const buffer = await cam.getSnapshot(false) // SD 640x480
+          const cvFrame = this.cvManager?.getFrame ? this.cvManager.getFrame(camStatus.id) : null
+          const buffer = cvFrame && cvFrame.length > 1000
+            ? cvFrame
+            : await cam.getSnapshot(false) // fallback SD 640x480
           snapshots[camStatus.id] = {
             data: buffer.toString('base64'),
             contentType: 'image/jpeg',

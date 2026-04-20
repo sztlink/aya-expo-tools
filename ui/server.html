@@ -66,6 +66,7 @@
     </div>
     <nav class="header-nav">
       <a href="/">Dashboard</a>
+      <a href="/cv.html">CV</a>
       <a href="/config.html">Config</a>
       <a href="/server.html" class="active">Servidor</a>
     </nav>
@@ -177,6 +178,7 @@
     let currentFrameIdx = 0
 
     const $ = id => document.getElementById(id)
+    const unwrap = payload => (payload && typeof payload === 'object' && 'data' in payload ? payload.data : payload)
 
     // ── Init ───────────────────────────────────────
     async function init() {
@@ -231,10 +233,10 @@
       renderCharts()
 
       // Load timelapse cameras
-      cameras = await fetch(`/api/timelapse/${date}/cameras`).then(r => r.json())
+      cameras = unwrap(await fetch(`/api/timelapse/${date}/cameras`).then(r => r.json()))
       frames = {}
       for (const cam of cameras) {
-        frames[cam] = await fetch(`/api/timelapse/${date}/${cam}/frames`).then(r => r.json())
+        frames[cam] = unwrap(await fetch(`/api/timelapse/${date}/${cam}/frames`).then(r => r.json()))
       }
 
       // Setup scrubber

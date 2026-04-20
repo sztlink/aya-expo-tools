@@ -20,6 +20,10 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
+const TIMELAPSE_SOURCE_DIR = fs.existsSync('D:\\aya-expo-data\\timelapse')
+  ? 'D:\\aya-expo-data\\timelapse'
+  : path.join(__dirname, '..', 'logs', 'timelapse');
+
 // ── Detect external drives (Windows) ────────────────────────────────
 /**
  * Returns array of removable/external drives.
@@ -95,8 +99,8 @@ async function calculateArchiveSize(config) {
     }
   }
 
-  // Timelapse (logs/timelapse/)
-  breakdown.timelapse = getDirSizeMB(path.join(__dirname, '..', 'logs', 'timelapse'));
+  // Timelapse
+  breakdown.timelapse = getDirSizeMB(TIMELAPSE_SOURCE_DIR);
 
   // Health logs (logs/health/)
   breakdown.logs = getDirSizeMB(path.join(__dirname, '..', 'logs', 'health'));
@@ -345,7 +349,7 @@ async function archive(targetDrive, slug, config, onProgress) {
 
     // 1. Copy timelapse
     onProgress({ step: 'timelapse', percent: 10, message: 'Copying timelapse...' });
-    const timelapseSource = path.join(__dirname, '..', 'logs', 'timelapse');
+    const timelapseSource = TIMELAPSE_SOURCE_DIR;
     const timelapseDest = path.join(basePath, 'timelapse');
     if (fs.existsSync(timelapseSource)) {
       copyDirRecursive(timelapseSource, timelapseDest, onProgress);

@@ -47,6 +47,18 @@ E:\python-venv\Scripts\pip install torch torchvision --index-url https://downloa
 E:\python-venv\Scripts\pip install ultralytics onnxruntime-gpu opencv-python numpy
 ```
 
+**Important field note (Amano Rio, 2026-04):** the venv alone is **not** sufficient.
+The target machine also needs a valid **Python 3.11 base installation** that matches the venv.
+If `pyvenv.cfg` points to a nonexistent path, the CV pipeline will fail even if `python-venv/` was copied successfully.
+
+Minimum verification on target machine:
+```bash
+C:\aya-expo-tools\clusters\cv\python\venv\Scripts\python.exe --version
+C:\aya-expo-tools\clusters\cv\python\venv\Scripts\python.exe -c "import torch; print(torch.cuda.is_available())"
+```
+
+If the first command fails, install Python 3.11 locally and repair `pyvenv.cfg` before assuming CV is ready.
+
 **1.4 Copy models**
 ```bash
 # Download YOLO model
@@ -171,8 +183,13 @@ C:\aya-expo-tools\config\amano-rio.json
 
 **3.4 Restart service**
 ```bash
-schtasks /end /tn "AYA Expo Tools"
-schtasks /run /tn "AYA Expo Tools"
+schtasks /end /tn "AYA Expo Tools Node"
+schtasks /run /tn "AYA Expo Tools Node"
+```
+
+If that task does not exist on the target machine, run the runtime directly:
+```bash
+C:\aya-expo-tools\node\node.exe C:\aya-expo-tools\index.js --config=<slug>
 ```
 
 ---
@@ -267,7 +284,8 @@ type C:\aya-expo-tools\logs\reports\report-20260329-120000.json
 - Check logs: `type C:\aya-expo-tools\logs\server.log`
 - Verify config: `type C:\aya-expo-tools\config\amano-rio.json`
 - Check port 3000 is free: `netstat -an | findstr :3000`
-- Restart Task Scheduler: `schtasks /end /tn "AYA Expo Tools" && schtasks /run /tn "AYA Expo Tools"`
+- Restart Task Scheduler: `schtasks /end /tn "AYA Expo Tools Node" && schtasks /run /tn "AYA Expo Tools Node"`
+- If the task name differs, run the runtime directly: `C:\aya-expo-tools\node\node.exe C:\aya-expo-tools\index.js --config=<slug>`
 
 ---
 
@@ -280,5 +298,5 @@ type C:\aya-expo-tools\logs\reports\report-20260329-120000.json
 
 ---
 
-Last updated: 2026-03-29  
-Version: 2.0
+Last updated: 2026-04-18  
+Version: 2.1

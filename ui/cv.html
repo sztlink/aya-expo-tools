@@ -298,7 +298,13 @@
     <div class="sub-header-left">
       <img src="logo-aya-branco.png" alt="AYA" class="sub-header-logo">
       <div class="sub-header-sep"></div>
-      <a href="/" class="sub-header-back">← Dashboard</a>
+      <a href="/" class="sub-header-back">Dashboard</a>
+      <div class="sub-header-sep"></div>
+      <a href="/cv.html" class="sub-header-back" style="color:var(--accent);">CV</a>
+      <div class="sub-header-sep"></div>
+      <a href="/config.html" class="sub-header-back">Config</a>
+      <div class="sub-header-sep"></div>
+      <a href="/server.html" class="sub-header-back">Servidor</a>
       <div class="sub-header-sep"></div>
       <span class="sub-header-title">Visão Computacional</span>
     </div>
@@ -377,9 +383,9 @@
       <div id="dualModeInfo" style="display:none;margin-bottom:12px;padding:8px 12px;
         background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-md);
         font-size:11px;color:var(--text-dim);font-family:'JetBrains Mono',monospace;">
-        📹 <span id="dualEntryCam">cam-1</span> &rarr; entradas &nbsp;&middot;&nbsp;
-        📹 <span id="dualExitCam">cam-2</span> &rarr; saídas &nbsp;&middot;&nbsp;
-        Ocupação = Entradas &minus; Saídas
+        Porta 1: 📹 <span id="dualEntryCam">cam-2</span> &nbsp;&middot;&nbsp;
+        Porta 2: 📹 <span id="dualExitCam">cam-2</span> &nbsp;&middot;&nbsp;
+        Ocupação = Σ Entradas &minus; Σ Saídas (ambas as portas bidirecionais)
       </div>
 
       <!-- Hero numbers -->
@@ -435,11 +441,16 @@
       <!-- Line editor — visual + counter frame -->
       <div class="line-editor" id="lineEditorSection">
         <div class="line-editor-header">
-          <div style="display:flex;align-items:center;gap:10px;">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <span style="font-size:12px;font-weight:500;">✏️ Linha Virtual de Contagem</span>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <button class="btn btn-sm btn-on" id="leRoleEntry" onclick="leChangeRole('entry')">Porta 1</button>
+              <button class="btn btn-sm" id="leRoleExit" onclick="leChangeRole('exit')">Porta 2</button>
+            </div>
             <select class="le-cam-select" id="leCamSelect" onchange="leChangeCamera(this.value)"></select>
           </div>
           <div style="display:flex;align-items:center;gap:8px;">
+            <span id="leRoleLabel" style="font-size:11px;color:var(--text-dim);font-family:'JetBrains Mono',monospace;">Entrada</span>
             <button class="btn btn-sm" onclick="leRefreshFrame()">🔄 Atualizar frame</button>
           </div>
         </div>
@@ -466,11 +477,11 @@
           <summary>Como usar o editor de linha</summary>
           <div class="help-content">
             <ol>
-              <li><strong>Escolha a câmera</strong> — no dropdown acima, selecione a câmera que cobre a <strong>entrada</strong> da exposição</li>
+              <li><strong>Escolha a porta</strong> — use os botões <strong>Porta 1</strong> e <strong>Porta 2</strong> para alternar a linha ativa</li>
               <li><strong>Posicione a linha</strong> — arraste os pontos <strong>P1</strong> e <strong>P2</strong> sobre a imagem, ou clique na imagem (1º clique = P1, 2º clique = P2)</li>
-              <li><strong>Orientação</strong> — a zona <strong>↑ FORA</strong> (acima da linha) é onde as pessoas estão <em>antes</em> de entrar. A zona <strong>↓ DENTRO</strong> (abaixo) é o interior da exposição</li>
-              <li><strong>Dica</strong> — posicione a linha <strong>na soleira da porta</strong> ou logo após a entrada, perpendicular ao fluxo de passagem</li>
-              <li><strong>Salvar &amp; Aplicar</strong> — grava a configuração e reinicia a detecção automaticamente</li>
+              <li><strong>Orientação</strong> — <strong>↑ FORA</strong> = lado de fora da sala / <strong>↓ DENTRO</strong> = interior da sala</li>
+              <li><strong>Bidirecional</strong> — cada porta conta <strong>entradas e saídas</strong> automaticamente. Não importa por qual porta a pessoa entra ou sai</li>
+              <li><strong>Salvar &amp; Aplicar</strong> — grava as duas linhas e reinicia a detecção</li>
             </ol>
             <div class="help-note">
               A contagem usa inteligência artificial para rastrear pessoas cruzando a linha.
@@ -533,6 +544,46 @@
     let cvCameras = [];
     let counterEnabled = false;
     let refreshTimer = null;
+    let leConfigCache = null;
+
+    function leEnsureCounterConfig(cfg, forceDual = false) {
+      if (!cfg.cv) cfg.cv = {};
+      const current = cfg.cv.counter || {};
+      const shouldBeDual = forceDual || current.mode === 'dual' || !!current.entry || !!current.exit;
+
+      if (shouldBeDual) {
+        const baseCamera = current.camera || current.entry?.camera || current.exit?.camera || 'cam-2';
+        const baseLine = current.line || current.entry?.line || current.exit?.line || '600,360,860,360';
+        const baseConfidence = current.confidence ?? current.entry?.confidence ?? current.exit?.confidence ?? 0.4;
+        const baseInterval = current.interval ?? current.entry?.interval ?? current.exit?.interval ?? 1;
+        cfg.cv.counter = {
+          enabled: current.enabled !== false,
+          mode: 'dual',
+          entry: {
+            camera: current.entry?.camera || baseCamera,
+            line: current.entry?.line || baseLine,
+            confidence: current.entry?.confidence ?? baseConfidence,
+            interval: current.entry?.interval ?? baseInterval,
+          },
+          exit: {
+            camera: current.exit?.camera || baseCamera,
+            line: current.exit?.line || baseLine,
+            confidence: current.exit?.confidence ?? baseConfidence,
+            interval: current.exit?.interval ?? baseInterval,
+          },
+        };
+      } else {
+        cfg.cv.counter = {
+          enabled: current.enabled !== false,
+          mode: 'single',
+          camera: current.camera || 'cam-2',
+          line: current.line || '600,360,860,360',
+          confidence: current.confidence ?? 0.4,
+          interval: current.interval ?? 1,
+        };
+      }
+      return cfg.cv.counter;
+    }
 
     // ── Init ───────────────────────────────────────
     async function init() {
@@ -545,23 +596,22 @@
       // Load config for line editor + camera selector
       try {
         const cfg = await api('/api/config');
-        const lineStr = cfg.cv?.counter?.line || '500,480,1400,480';
-        const parts = lineStr.split(',').map(Number);
-        leLineReal = { x1: parts[0], y1: parts[1], x2: parts[2], y2: parts[3] };
-        leCounterCam = cfg.cv?.counter?.camera || 'cam-2';
-        counterEnabled = !!cfg.cv?.counter?.enabled;
+        leConfigCache = cfg;
+        const counter = leEnsureCounterConfig(leConfigCache, cfg.cv?.counter?.mode === 'dual' || !!cfg.cv?.counter?.entry || !!cfg.cv?.counter?.exit);
+        counterEnabled = !!counter?.enabled;
 
         // Populate camera selector
         const select = $('leCamSelect');
+        select.innerHTML = '';
         (cfg.cameras || []).forEach(c => {
           const opt = document.createElement('option');
           opt.value = c.id;
           opt.textContent = `${c.id} — ${c.name || c.id}`;
-          if (c.id === leCounterCam) opt.selected = true;
           select.appendChild(opt);
         });
 
         leInit();
+        leLoadRole('entry', false);
       } catch {}
 
       // Initial data load
@@ -574,7 +624,8 @@
     // ── API helper ─────────────────────────────────
     async function api(url, opts) {
       const res = await fetch(url, opts);
-      return res.json();
+      const json = await res.json();
+      return json && typeof json === 'object' && 'ok' in json && 'data' in json ? json.data : json;
     }
 
     // ── Refresh all CV data ────────────────────────
@@ -851,9 +902,56 @@
 
     let leLineReal = { x1: 500, y1: 480, x2: 1400, y2: 480 }; // coords in real frame pixels
     let leCounterCam = 'cam-2';
+    let leCounterRole = 'entry';
     let leImgNatW = 1920, leImgNatH = 1080; // natural resolution of frame
     let leReady = false;
     let leDragging = null; // 1 or 2
+
+    function leSyncCurrentRoleToCache() {
+      if (!leConfigCache) return;
+      const counter = leEnsureCounterConfig(leConfigCache, true);
+      const target = counter[leCounterRole] || (counter[leCounterRole] = {});
+      target.camera = leCounterCam;
+      target.line = `${leLineReal.x1},${leLineReal.y1},${leLineReal.x2},${leLineReal.y2}`;
+      target.confidence = target.confidence ?? 0.4;
+      target.interval = target.interval ?? 1;
+    }
+
+    function leUpdateRoleUI() {
+      $('leRoleEntry').classList.toggle('btn-on', leCounterRole === 'entry');
+      $('leRoleEntry').classList.toggle('btn-off', leCounterRole !== 'entry');
+      $('leRoleExit').classList.toggle('btn-on', leCounterRole === 'exit');
+      $('leRoleExit').classList.toggle('btn-off', leCounterRole !== 'exit');
+      $('leRoleLabel').textContent = leCounterRole === 'entry' ? 'Editando: Porta 1' : 'Editando: Porta 2';
+    }
+
+    function leLoadRole(role, refreshFrameNow = true) {
+      leCounterRole = role;
+      if (!leConfigCache) return;
+      const counter = leEnsureCounterConfig(leConfigCache, true);
+      const target = counter[role] || {};
+      const lineStr = target.line || '600,360,860,360';
+      const parts = lineStr.split(',').map(Number);
+      leLineReal = { x1: parts[0], y1: parts[1], x2: parts[2], y2: parts[3] };
+      leCounterCam = target.camera || 'cam-2';
+      leUpdateRoleUI();
+      $('leCamSelect').value = leCounterCam;
+      leNextClick = 1;
+      if (refreshFrameNow) {
+        leReady = false;
+        $('lePlaceholder').style.display = 'flex';
+        $('lePlaceholder').textContent = 'Carregando frame da câmera...';
+        $('leImg').style.display = 'none';
+        leRefreshFrame();
+      } else if (leReady) {
+        leRedraw();
+      }
+    }
+
+    function leChangeRole(role) {
+      leSyncCurrentRoleToCache();
+      leLoadRole(role, true);
+    }
 
     function leInit() {
       const wrap = $('leWrap');
@@ -1011,7 +1109,7 @@
       zBelow.style.transform = 'translateX(-50%)';
 
       // Coords display
-      $('leCoords').textContent = `Linha: (${leLineReal.x1}, ${leLineReal.y1}) → (${leLineReal.x2}, ${leLineReal.y2})  |  Frame: ${leImgNatW}×${leImgNatH}`;
+      $('leCoords').textContent = `${leCounterRole === 'entry' ? 'Porta 1' : 'Porta 2'} · ${leCounterCam} · Linha: (${leLineReal.x1}, ${leLineReal.y1}) → (${leLineReal.x2}, ${leLineReal.y2})  |  Frame: ${leImgNatW}×${leImgNatH}`;
     }
 
     function leStartDrag(e, point) {
@@ -1065,6 +1163,11 @@
 
     function leChangeCamera(camId) {
       leCounterCam = camId;
+      if (leConfigCache) {
+        const counter = leEnsureCounterConfig(leConfigCache, true);
+        if (!counter[leCounterRole]) counter[leCounterRole] = {};
+        counter[leCounterRole].camera = camId;
+      }
       leReady = false;
       $('lePlaceholder').style.display = 'flex';
       $('lePlaceholder').textContent = 'Carregando frame da câmera...';
@@ -1073,25 +1176,23 @@
     }
 
     async function saveLine() {
-      const line = `${leLineReal.x1},${leLineReal.y1},${leLineReal.x2},${leLineReal.y2}`;
       try {
-        const cfg = await api('/api/config');
-        if (!cfg.cv) cfg.cv = {};
-        if (!cfg.cv.counter) cfg.cv.counter = {};
-        cfg.cv.counter.line = line;
-        cfg.cv.counter.camera = leCounterCam;
+        if (!leConfigCache) throw new Error('Config não carregada');
+        leSyncCurrentRoleToCache();
+        const cfg = JSON.parse(JSON.stringify(leConfigCache));
+        leEnsureCounterConfig(cfg, true);
         await api('/api/config', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(cfg),
         });
-        // Restart CV to apply new line + camera
         await api('/api/cv/stop', { method: 'POST' });
         setTimeout(async () => {
           await api('/api/cv/start', { method: 'POST' });
-          toast(`Salvo: câmera ${leCounterCam}, linha ${line}. CV reiniciado.`, 'success');
+          toast(`Salvo: ${leCounterRole === 'entry' ? 'Porta 1' : 'Porta 2'} em ${leCounterCam}. CV reiniciado.`, 'success');
         }, 2000);
-      } catch {
+      } catch (err) {
+        console.error(err);
         toast('Erro ao salvar configuração', 'error');
       }
     }

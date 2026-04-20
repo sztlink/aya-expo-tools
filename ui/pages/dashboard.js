@@ -1,8 +1,70 @@
-// Dashboard Page — Leonardo's daily operational view
+// Dashboard Page — pragmatic local operational view
 import { html, useState, useEffect } from '../app.js';
-import { ws, authFetch } from '../app.js';
+import { authFetch } from '../app.js';
 import { Card, Badge, StatusDot, Button } from '../components/base/index.js';
 import { ClusterCard } from '../components/composed/index.js';
+
+function formatDate(dateStr) {
+  if (!dateStr) return '—';
+  try {
+    return new Date(`${dateStr}T00:00:00`).toLocaleDateString('pt-BR');
+  } catch {
+    return dateStr;
+  }
+}
+
+function buildNextEvent(schedule) {
+  if (!schedule?.todaySchedule) return 'Hoje fechado';
+  return schedule.isOpen
+    ? `Fechamento ${schedule.todaySchedule.close}`
+    : `Abertura ${schedule.todaySchedule.open}`;
+}
+
+function deriveClusterStatus({ projectors, cameras, cvStatus, config, health, schedule }) {
+  const projectorList = projectors?.data || [];
+  const cameraList = cameras?.data || [];
+  const onlineProjectors = projectorList.filter(p => p.online).length;
+  const onlineCameras = cameraList.filter(c => c.online).length;
+  const cv = cvStatus?.data || {};
+
+  return {
+    equipment: {
+      status: onlineProjectors === projectorList.length && projectorList.length > 0 ? 'ok' : (onlineProjectors > 0 ? 'warn' : 'error'),
+      metrics: [
+        { label: 'Projetores online', value: `${onlineProjectors}/${projectorList.length}` },
+        { label: 'Áudio', value: health?.tvs === 0 ? 'Local' : 'Ativo' },
+      ]
+    },
+    cameras: {
+      status: onlineCameras === cameraList.length && cameraList.length > 0 ? 'ok' : (onlineCameras > 0 ? 'warn' : 'error'),
+      metrics: [
+        { label: 'Câmeras online', value: `${onlineCameras}/${cameraList.length}` },
+        { label: 'Preview', value: onlineCameras > 0 ? 'Disponível' : 'Indisponível' },
+      ]
+    },
+    cv: {
+      status: cv.enabled ? (cv.running ? 'ok' : 'warn') : 'info',
+      metrics: [
+        { label: 'Detectores', value: `${cv.cameras || 0}` },
+        { label: 'Counter', value: cv.counter?.running ? 'Ativo' : 'Parado' },
+      ]
+    },
+    data: {
+      status: (health?.server?.disk?.pct ?? 0) < 85 ? 'ok' : 'warn',
+      metrics: [
+        { label: 'Disco C:', value: `${health?.server?.disk?.pct ?? 0}%` },
+        { label: 'Livre', value: `${health?.server?.disk?.free ?? 0} GB` },
+      ]
+    },
+    communication: {
+      status: health?.internet ? 'ok' : 'warn',
+      metrics: [
+        { label: 'Internet', value: health?.internet ? 'Online' : 'Offline' },
+        { label: 'Agenda', value: schedule?.jobCount ? `${schedule.jobCount} jobs` : 'Sem jobs' },
+      ]
+    }
+  };
+}
 
 export default function Dashboard() {
   const [expoData, setExpoData] = useState(null);
@@ -13,55 +75,66 @@ export default function Dashboard() {
     data: { status: 'info', metrics: [] },
     communication: { status: 'info', metrics: [] }
   });
-  const [serverHealth, setServerHealth] = useState({
-    cpu: 0,
-    gpu: 0,
-    disk: 0,
-    ram: 0
-  });
+  const [serverHealth, setServerHealth] = useState({ cpu: 0, gpu: 0, disk: 0, ram: 0 });
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  // Load initial data
   useEffect(() => {
     loadDashboardData();
-  }, []);
-
-  // WebSocket updates
-  useEffect(() => {
-    const handleUpdate = (data) => {
-      if (data.type === 'cluster_status') {
-        setClusterStatus(data.clusters || clusterStatus);
-      }
-      if (data.type === 'server_health') {
-        setServerHealth(data.health || serverHealth);
-      }
-      if (data.type === 'expo_status') {
-        setExpoData(data.expo || expoData);
-      }
-    };
-
-    ws.on('cluster_status', handleUpdate);
-    ws.on('server_health', handleUpdate);
-    ws.on('expo_status', handleUpdate);
-
-    return () => {
-      ws.off('cluster_status', handleUpdate);
-      ws.off('server_health', handleUpdate);
-      ws.off('expo_status', handleUpdate);
-    };
+    const timer = setInterval(loadDashboardData, 15000);
+    return () => clearInterval(timer);
   }, []);
 
   const loadDashboardData = async () => {
     try {
-      const res = await authFetch('/api/dashboard');
-      if (res.ok) {
-        const data = await res.json();
-        setExpoData(data.expo);
-        setClusterStatus(data.clusters || clusterStatus);
-        setServerHealth(data.serverHealth || serverHealth);
-      }
+      setError(null);
+      const [healthRes, infoRes, projectorsRes, camerasRes, cvRes, scheduleRes] = await Promise.all([
+        authFetch('/api/health'),
+        authFetch('/api/info'),
+        authFetch('/api/projectors'),
+        authFetch('/api/cameras'),
+        authFetch('/api/cv/status'),
+        authFetch('/api/schedule')
+      ]);
+
+      const [health, info, projectors, cameras, cvStatus, scheduleWrap] = await Promise.all([
+        healthRes.json(),
+        infoRes.json(),
+        projectorsRes.json(),
+        camerasRes.json(),
+        cvRes.json(),
+        scheduleRes.json()
+      ]);
+
+      const schedule = scheduleWrap?.data || {};
+      const exhibition = info?.exhibition || {};
+      const isOpen = !!schedule.isOpen;
+
+      setExpoData({
+        name: exhibition.name || health.exhibition || 'Exposição',
+        location: [exhibition.venue, exhibition.city].filter(Boolean).join(' · ') || 'Local não definido',
+        period: exhibition.dates ? `${formatDate(exhibition.dates.open)} → ${formatDate(exhibition.dates.close)}` : 'Período não definido',
+        status: isOpen ? 'aberta' : 'fechada',
+        nextEvent: buildNextEvent(schedule),
+      });
+
+      setClusterStatus(deriveClusterStatus({ projectors, cameras, cvStatus, config: null, health, schedule }));
+      setServerHealth({
+        cpu: health?.server?.cpu ?? 0,
+        gpu: health?.server?.gpus?.[0]?.temp ?? 0,
+        disk: health?.server?.disk?.pct ?? 0,
+        ram: health?.server?.ram?.pct ?? 0,
+      });
     } catch (err) {
       console.error('[Dashboard] Failed to load data:', err);
+      setError(err.message || 'Erro ao carregar dashboard');
+      setExpoData(prev => prev || {
+        name: 'AYA Expo Tools',
+        location: 'Falha ao carregar',
+        period: '—',
+        status: 'fechada',
+        nextEvent: 'Indisponível',
+      });
     }
   };
 
@@ -69,11 +142,9 @@ export default function Dashboard() {
     if (!confirm('Tem certeza que deseja abrir a exposição?')) return;
     setLoading(true);
     try {
-      const res = await authFetch('/api/expo/open', { method: 'POST' });
-      if (res.ok) {
-        const data = await res.json();
-        setExpoData(data.expo);
-      }
+      const res = await authFetch('/api/schedule/open', { method: 'POST' });
+      if (!res.ok) throw new Error('Falha ao abrir exposição');
+      await loadDashboardData();
     } catch (err) {
       console.error('[Dashboard] Failed to open expo:', err);
       alert('Erro ao abrir exposição');
@@ -86,11 +157,9 @@ export default function Dashboard() {
     if (!confirm('Tem certeza que deseja fechar a exposição?')) return;
     setLoading(true);
     try {
-      const res = await authFetch('/api/expo/close', { method: 'POST' });
-      if (res.ok) {
-        const data = await res.json();
-        setExpoData(data.expo);
-      }
+      const res = await authFetch('/api/schedule/close', { method: 'POST' });
+      if (!res.ok) throw new Error('Falha ao fechar exposição');
+      await loadDashboardData();
     } catch (err) {
       console.error('[Dashboard] Failed to close expo:', err);
       alert('Erro ao fechar exposição');
@@ -112,17 +181,16 @@ export default function Dashboard() {
 
   return html`
     <div style="padding: 2rem; max-width: 1400px; margin: 0 auto;">
-      <!-- Header -->
       <div style="margin-bottom: 2rem;">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
-          <div style="display: flex; align-items: center; gap: 1rem;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; gap: 1rem; flex-wrap: wrap;">
+          <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
             <h1 style="margin: 0; font-size: 2rem; font-weight: 700;">${expoData.name || 'Exposição'}</h1>
             <${Badge} label=${isOpen ? 'ABERTA' : 'FECHADA'} variant=${statusVariant} />
           </div>
           <div style="display: flex; align-items: center; gap: 0.5rem;">
-            <${StatusDot} 
-              status=${isOpen ? 'ok' : 'warn'} 
-              label=${isOpen ? 'Em Operação' : 'Fechada'} 
+            <${StatusDot}
+              status=${isOpen ? 'ok' : 'warn'}
+              label=${isOpen ? 'Em Operação' : 'Fechada'}
               pulse=${isOpen}
             />
           </div>
@@ -130,9 +198,13 @@ export default function Dashboard() {
         <p style="color: var(--muted-foreground); margin: 0; font-size: 0.875rem;">
           ${expoData.location || 'Local não definido'} · ${expoData.period || 'Período não definido'}
         </p>
+        ${error && html`
+          <p style="margin: 0.75rem 0 0 0; color: var(--operacional); font-size: 0.875rem;">
+            ${error}
+          </p>
+        `}
       </div>
 
-      <!-- Quick Action Bar -->
       <${Card} className="quick-actions" style="margin-bottom: 2rem;">
         <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
           <${Button}
@@ -164,45 +236,44 @@ export default function Dashboard() {
         </div>
       <//>
 
-      <!-- Cluster Grid -->
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
         <${ClusterCard}
           name="Equipamentos"
           status=${clusterStatus.equipment.status}
           icon="🎬"
           metrics=${clusterStatus.equipment.metrics}
-          onClick=${() => location.hash = '/selftest'}
+          onClick=${() => location.href = '/config.html'}
         />
         <${ClusterCard}
           name="Câmeras"
           status=${clusterStatus.cameras.status}
           icon="📹"
           metrics=${clusterStatus.cameras.metrics}
-          onClick=${() => location.hash = '/selftest'}
+          onClick=${() => location.href = '/config.html'}
         />
         <${ClusterCard}
           name="Visão Computacional"
           status=${clusterStatus.cv.status}
           icon="👁️"
           metrics=${clusterStatus.cv.metrics}
-          onClick=${() => location.hash = '/cv'}
+          onClick=${() => location.href = '/cv.html'}
         />
         <${ClusterCard}
           name="Dados"
           status=${clusterStatus.data.status}
           icon="💾"
           metrics=${clusterStatus.data.metrics}
-          onClick=${() => location.hash = '/archive'}
+          onClick=${() => location.href = '/server.html'}
         />
         <${ClusterCard}
           name="Comunicação"
           status=${clusterStatus.communication.status}
           icon="🔗"
           metrics=${clusterStatus.communication.metrics}
+          onClick=${() => location.href = '/server.html'}
         />
       </div>
 
-      <!-- Server Health Bar -->
       <${Card} title="Saúde do Servidor" status=${serverHealth.cpu > 90 || serverHealth.gpu > 85 ? 'error' : serverHealth.cpu > 70 ? 'warn' : 'ok'}>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem;">
           <div>
