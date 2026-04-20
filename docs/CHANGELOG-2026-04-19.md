@@ -75,3 +75,9 @@ Tese consolidada:
 - o szt.link deixa de ser operador necessário
 - a próxima expo deve conseguir **abrir, fechar e se recuperar localmente**
 - CV avançado, analytics e outras camadas podem existir, mas não podem bloquear a operação do Core
+
+
+## 2026-04-20 — Amano Rio
+- Playback estabilizado em campo com **Resolume Composition FPS = 30** e **NVIDIA default**.
+- Leituras anteriores de tuning fino no painel NVIDIA deixaram de ser hipótese principal; o achado mais forte foi alinhar a cadência do Resolume à chain física operando em 30 Hz.
+- Counter religado após estabilização do playback.
