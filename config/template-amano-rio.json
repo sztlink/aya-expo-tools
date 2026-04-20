@@ -94,6 +94,11 @@
       "password": "AC00ac00ac00ac"
     }
   ],
+  "audio": {
+    "type": "analog",
+    "interface": "p2",
+    "volume": 80
+  },
   "pjlink": {
     "port": 4352,
     "password": "",
@@ -130,7 +135,7 @@
     }
   },
   "cv": {
-    "enabled": true,
+    "enabled": false,
     "hardware": "auto",
     "model": "yolov8n",
     "imgsz": null,
@@ -181,7 +186,7 @@
       "cam-2"
     ],
     "counter": {
-      "enabled": true,
+      "enabled": false,
       "mode": "dual",
       "entry": {
         "camera": "cam-2",

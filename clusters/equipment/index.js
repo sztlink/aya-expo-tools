@@ -96,6 +96,16 @@ module.exports = {
         console.log(`  ✓ ${tvs.length} TVs wake-on-LAN sent`);
       }
 
+      // Restore Windows master volume if configured
+      try {
+        const targetVolume = Number(this.config.audio?.volume);
+        const openVolume = Number.isFinite(targetVolume) ? targetVolume : 70;
+        const result = this.audio.setVolume(openVolume);
+        console.log(`  ✓ Audio volume restored to ${result}%`);
+      } catch (err) {
+        console.error('  ⚠️ Audio restore failed:', err.message);
+      }
+
       // Wait for equipment to warm up, then poll
       setTimeout(() => {
         this.projectors.pollAll().then(s => this.broadcast('projectors', s));
@@ -112,6 +122,14 @@ module.exports = {
     console.log('  🔴 Equipment: Closing...');
     
     try {
+      // Mute Windows master volume first to guarantee silence on close
+      try {
+        const result = this.audio.setVolume(0);
+        console.log(`  ✓ Audio volume set to ${result}%`);
+      } catch (err) {
+        console.error('  ⚠️ Audio mute failed:', err.message);
+      }
+
       // Stop all TV loops
       const tvs = this.config.tvs || [];
       for (const t of tvs) {
