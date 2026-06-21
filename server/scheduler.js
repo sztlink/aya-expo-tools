@@ -204,13 +204,18 @@ class Scheduler {
       }
     }
 
-    // Step 3: Power on projectors
-    try {
-      this.addLog('power-on-all', 'started');
-      await this.pm.powerOnAll();
-      this.addLog('power-on-all', 'completed');
-    } catch (err) {
-      this.addLog('power-on-all', 'error', err.message);
+    // Step 3: Power on projectors (gated: schedule.controlProjector !== false)
+    if (this.config.controlProjector !== false) {
+      try {
+        this.addLog('power-on-all', 'started');
+        await this.pm.powerOnAll();
+        this.addLog('power-on-all', 'completed');
+      } catch (err) {
+        this.addLog('power-on-all', 'error', err.message);
+      }
+    } else {
+      this.addLog('power-on-all', 'skipped', 'controlProjector=false');
+      console.log('[Scheduler] ⏭ Projetor: power-on pulado (controlProjector=false)');
     }
 
     // Step 4: Restore audio volume
@@ -234,12 +239,17 @@ class Scheduler {
     console.log(`[Scheduler] ⏹ CLOSE sequence started at ${new Date().toISOString()}`);
     this.addLog('close-sequence', 'started');
 
-    try {
-      this.addLog('power-off-all', 'started');
-      await this.pm.powerOffAll();
-      this.addLog('power-off-all', 'completed');
-    } catch (err) {
-      this.addLog('power-off-all', 'error', err.message);
+    if (this.config.controlProjector !== false) {
+      try {
+        this.addLog('power-off-all', 'started');
+        await this.pm.powerOffAll();
+        this.addLog('power-off-all', 'completed');
+      } catch (err) {
+        this.addLog('power-off-all', 'error', err.message);
+      }
+    } else {
+      this.addLog('power-off-all', 'skipped', 'controlProjector=false');
+      console.log('[Scheduler] ⏭ Projetor: power-off pulado (controlProjector=false) — projetor fica ligado');
     }
 
     if (this.tvModule && this.tvConfig.length > 0) {
