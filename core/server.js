@@ -368,18 +368,18 @@ async function startManagers(config, managers = {}) {
     }
   };
 
-  // Always-on managers. These remain available during closed hours so local
-  // health, polling and the reduced Portal heartbeat continue to work.
-  await invoke('projectors', managers.projectors, 'startPolling', config?.pjlink?.pollInterval || 30000);
-  await invoke('cameras', managers.cameras, 'startPolling', 30000);
+  // Always-on managers. Report/health/Portal telemetry can start before the
+  // physical reconciliation; PJLink/camera polling starts afterwards to avoid
+  // racing immediate polls with open/close commands.
   await invoke('data', managers.data, 'start'); // report cron only; CV logging is scheduled
   await invoke('serverHealth', managers.serverHealth, 'start');
   await invoke('portalSync', managers.portalSync, 'start');
   await invoke('runtimeMonitor', managers.runtimeMonitor, 'start', managers);
 
-  // Scheduler is deliberately last. start() registers cron jobs and awaits one
-  // boot reconciliation, which is the sole owner of CV/logger/timelapse startup.
+  // Scheduler owns the boot reconciliation before any immediate hardware poll.
   await invoke('scheduler', managers.scheduler, 'start');
+  await invoke('projectors', managers.projectors, 'startPolling', config?.pjlink?.pollInterval || 30000);
+  await invoke('cameras', managers.cameras, 'startPolling', 30000);
 
   return { ok: errors.length === 0, results, errors };
 }

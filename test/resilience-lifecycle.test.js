@@ -36,7 +36,7 @@ function config() {
 }
 
 describe('Epic 1 boot lifecycle', () => {
-  it('starts always-on managers in order and scheduler last, without direct scheduled starts', async (t) => {
+  it('reconciles schedule before starting immediate hardware polling', async (t) => {
     quiet(t);
     const trace = [];
     const forbidden = [];
@@ -50,9 +50,7 @@ describe('Epic 1 boot lifecycle', () => {
       scheduler: {
         start() {
           trace.push('scheduler');
-          assert.deepEqual(trace, [
-            'projectors:1234', 'cameras:30000', 'data', 'health', 'portal', 'runtime', 'scheduler',
-          ]);
+          assert.deepEqual(trace, ['data', 'health', 'portal', 'runtime', 'scheduler']);
           return { ok: true };
         },
       },
@@ -65,7 +63,7 @@ describe('Epic 1 boot lifecycle', () => {
     assert.equal(result.ok, true);
     assert.deepEqual(forbidden, []);
     assert.deepEqual(trace, [
-      'projectors:1234', 'cameras:30000', 'data', 'health', 'portal', 'runtime', 'scheduler',
+      'data', 'health', 'portal', 'runtime', 'scheduler', 'projectors:1234', 'cameras:30000',
     ]);
   });
 
@@ -172,8 +170,11 @@ describe('Epic 1 boot lifecycle', () => {
       assert.equal(trace.filter(item => item === event).length, 1, `${event} must happen once`);
     }
     const firstScheduled = trace.indexOf('equipment:open');
-    for (const event of ['poll:projectors', 'poll:cameras', 'reports:start', 'health:start', 'portal:start', 'runtime:start']) {
+    for (const event of ['reports:start', 'health:start', 'portal:start', 'runtime:start']) {
       assert.ok(trace.indexOf(event) >= 0 && trace.indexOf(event) < firstScheduled, `${event} precedes reconciliation`);
+    }
+    for (const event of ['poll:projectors', 'poll:cameras']) {
+      assert.ok(trace.indexOf(event) > firstScheduled, `${event} starts after reconciliation`);
     }
   });
 });
