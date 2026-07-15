@@ -48,6 +48,17 @@ let _alerts = []     // { type, message, timestamp, value, threshold }
 let _storage = null  // folder sizes, refreshed every 5min
 let _storageLastPoll = 0
 const STORAGE_POLL_INTERVAL = 300_000  // 5min
+let _status = {
+  startedAt: null,
+  intervalMs: POLL_INTERVAL,
+  runs: 0,
+  failedRuns: 0,
+  lastPollStartedAt: null,
+  lastPollAt: null,
+  lastOkAt: null,
+  lastErrorAt: null,
+  lastErrorMessage: null,
+}
 
 // Alert thresholds
 const THRESHOLDS = {
@@ -343,6 +354,9 @@ function persistLog(data) {
 // ── Poll ─────────────────────────────────────────────────────
 
 async function poll() {
+  _status.lastPollStartedAt = new Date().toISOString()
+  _status.runs++
+
   try {
     const [gpus, disk, processes] = await Promise.all([
       queryGpu(),
@@ -379,6 +393,9 @@ async function poll() {
     data.alerts = newAlerts
 
     _current = data
+    _status.lastPollAt = data.timestamp
+    _status.lastOkAt = data.timestamp
+    _status.lastErrorMessage = null
 
     // Persistent log — JSONL por dia
     persistLog(data)
@@ -399,6 +416,9 @@ async function poll() {
 
     return data
   } catch (err) {
+    _status.failedRuns++
+    _status.lastErrorAt = new Date().toISOString()
+    _status.lastErrorMessage = err.message
     console.error('[server-health] poll error:', err.message)
     return _current
   }
@@ -412,6 +432,9 @@ module.exports = {
    * @param {number} [interval] — ms between polls (default 30s)
    */
   start(interval = POLL_INTERVAL) {
+    _status.startedAt = new Date().toISOString()
+    _status.intervalMs = interval
+
     // Initial CPU baseline (first reading is always 0)
     getCpuUsage()
 
@@ -453,6 +476,16 @@ module.exports = {
   /** Get thresholds (for UI display) */
   getThresholds() {
     return { ...THRESHOLDS }
+  },
+
+  getStatus() {
+    return {
+      ..._status,
+      currentTimestamp: _current?.timestamp || null,
+      alerts: _alerts.length,
+      historyPoints: _history.length,
+      logDate: _logDate,
+    }
   },
 
   /** Force a poll now (returns promise) */

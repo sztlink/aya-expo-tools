@@ -118,13 +118,6 @@ class LineCrossingCounter:
         current_ids = set()
         hour = datetime.now().strftime("%H")
 
-        # Reset hourly if day changed
-        today = datetime.now().strftime("%Y-%m-%d")
-        if today != self.day_start:
-            self.hourly = {}
-            self.day_start = today
-            # Don't reset total entries/exits — those accumulate per session
-
         if hour not in self.hourly:
             self.hourly[hour] = {"entries": 0, "exits": 0}
 
@@ -402,6 +395,18 @@ def main():
                     "x1": x1, "y1": y1, "x2": x2, "y2": y2,
                 })
 
+        # Daily reset at midnight — save yesterday's data and start fresh
+        today = datetime.now().strftime("%Y-%m-%d")
+        if today != counter.day_start:
+            yesterday_file = OUTPUT_DIR / f"daily-{counter.day_start}.json"
+            write_json(yesterday_file, counter.get_counts())
+            print(f"[Counter] Day ended: {counter.entries} entries, {counter.exits} exits, saved to {yesterday_file}")
+
+            counter = LineCrossingCounter(line_start, line_end)
+            frame_count = 0
+            write_json(COUNT_FILE, counter.get_counts())
+            print(f"[Counter] New day: {today} - counters reset")
+
         # Update counter
         new_in, new_out = counter.update(tracks)
         if new_in > 0 or new_out > 0:
@@ -410,18 +415,6 @@ def main():
                 avg = sum(counter.dwell_times) / len(counter.dwell_times)
                 dwell_info = f" avg_stay={counter._format_duration(avg)}"
             print(f"[Counter] +{new_in} IN / +{new_out} OUT -> {counter.entries} in, {counter.exits} out, {counter.occupancy} now{dwell_info}")
-
-        # Daily reset at midnight — save yesterday's data and start fresh
-        today = datetime.now().strftime("%Y-%m-%d")
-        if today != counter.day_start:
-            # Save yesterday's final counts
-            yesterday_file = OUTPUT_DIR / f"daily-{counter.day_start}.json"
-            write_json(yesterday_file, counter.get_counts())
-            print(f"[Counter] Day ended: {counter.entries} entries, {counter.exits} exits, saved to {yesterday_file}")
-            # Reset
-            counter = LineCrossingCounter(line_start, line_end)
-            frame_count = 0
-            print(f"[Counter] New day: {today} - counters reset")
 
         # Write outputs periodically
         if frame_count % 5 == 0:  # every 5 frames (~2.5s at 0.5s interval)

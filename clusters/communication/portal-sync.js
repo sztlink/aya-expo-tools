@@ -19,13 +19,14 @@ const fs = require('fs')
 const path = require('path')
 const network = require('../../core/network')
 const tv = require('../equipment/tv')
+const audio = require('../equipment/audio')
 const cvLogger = require('../data/cv-logger')
 const cvReport = require('../data/cv-report')
 
 // Carrega .env local (se existir) sem dependência de dotenv
 // Formato suportado: KEY=VALUE por linha, # para comentários
 ;(function loadEnv() {
-  const envPath = path.join(__dirname, '..', '.env')
+  const envPath = path.join(__dirname, '..', '..', '.env')
   if (!fs.existsSync(envPath)) return
   try {
     const lines = fs.readFileSync(envPath, 'utf8').split('\n')
@@ -72,6 +73,20 @@ class PortalSync {
     this._running = false
     this._timer = null
     this._camRotation = 0
+    this._status = {
+      startedAt: null,
+      running: false,
+      lastPushStartedAt: null,
+      lastPushOkAt: null,
+      lastPushErrorAt: null,
+      lastPushErrorMessage: null,
+      lastPushDurationMs: null,
+      pushCount: 0,
+      failureCount: 0,
+      circuitOpen: false,
+      circuitOpenUntil: null,
+      nextIntervalMs: this.interval,
+    }
 
     // Backoff exponencial
     this._retryDelay = 5_000
@@ -99,11 +114,14 @@ class PortalSync {
     }
     console.log(`  ⚡ Portal sync: → ${this.portalUrl} (a cada ${this.interval / 1000}s)`)
     this._running = true
+    this._status.startedAt = new Date().toISOString()
+    this._status.running = true
     this._push() // push imediato no início
   }
 
   stop() {
     this._running = false
+    this._status.running = false
     if (this._timer) {
       clearTimeout(this._timer)
       this._timer = null
@@ -116,6 +134,8 @@ class PortalSync {
     if (!this._circuitOpen) return false
     if (Date.now() > this._circuitOpenUntil) {
       this._circuitOpen = false
+      this._status.circuitOpen = false
+      this._status.circuitOpenUntil = null
       this._failureWindow = []
       this._retryDelay = 5_000
       console.log('  ⚡ Portal sync: circuit RESET — retentando...')
@@ -133,10 +153,14 @@ class PortalSync {
     if (this._failureWindow.length >= this._circuitMaxFailures) {
       this._circuitOpen = true
       this._circuitOpenUntil = now + this._circuitPauseMs
+      this._status.circuitOpen = true
+      this._status.circuitOpenUntil = new Date(this._circuitOpenUntil).toISOString()
       const pauseMin = Math.round(this._circuitPauseMs / 60_000)
       console.log(`  ⚡ Portal sync: circuit ABERTO — pausando ${pauseMin}min (${this._failureWindow.length} falhas em 5min)`)
       return
     }
+
+    this._status.failureCount++
 
     // Backoff exponencial
     this._retryDelay = Math.min(this._retryDelay * 2, this._maxRetryDelay)
@@ -146,6 +170,9 @@ class PortalSync {
   _recordSuccess() {
     this._retryDelay = 5_000 // reset backoff
     this._failureWindow = [] // limpa falhas anteriores ao sucesso
+    this._status.circuitOpen = false
+    this._status.circuitOpenUntil = null
+    this._status.lastPushErrorMessage = null
   }
 
   // ─── Payload ──────────────────────────────────────────────
@@ -196,9 +223,10 @@ class PortalSync {
       ) : undefined,
     }
 
-    // Zones + dwell (from getStatus)
+    // Zones + dwell + fusion debug (from getStatus)
     if (status.zones) payload.zones = status.zones
     if (status.dwell) payload.dwell = status.dwell
+    if (status.fusion) payload.fusion = status.fusion
 
     // Daily summary (on-the-fly from cv-logger) — included in every push, lightweight
     try {
@@ -228,18 +256,21 @@ class PortalSync {
       } catch { /* report not ready */ }
     }
 
-    // Heatmap: push 1x per hour (base64 PNG of first CV camera)
+    // Heatmap: push 1x per hour — por câmera + legado (primeira câmera)
     if (!this._lastHeatmapPush || now - this._lastHeatmapPush > 3600_000) {
       const cvCams = this.config.cv?.cameras || []
-      const camId = cvCams[0] || null
-      if (camId) {
+      const perCamera = {}
+      for (const camId of cvCams) {
         const buffer = this.cvManager.getHeatmap(camId)
-        if (buffer) {
-          payload.heatmapBase64 = buffer.toString('base64')
-          payload.heatmapCamId = camId
-          payload.heatmapUpdatedAt = new Date().toISOString()
-          this._lastHeatmapPush = now
-        }
+        if (buffer) perCamera[camId] = buffer.toString('base64')
+      }
+      if (Object.keys(perCamera).length > 0) {
+        payload.heatmapPerCamera = perCamera
+        const firstId = Object.keys(perCamera)[0]
+        payload.heatmapBase64 = perCamera[firstId]
+        payload.heatmapCamId = firstId
+        payload.heatmapUpdatedAt = new Date().toISOString()
+        this._lastHeatmapPush = now
       }
     }
 
@@ -269,7 +300,7 @@ class PortalSync {
       cameras: this.cameras.getAllStatus().length,
       tvs: (this.config.tvs || []).length,
       internet,
-      schedule: this.scheduler.enabled,
+      schedule: this.scheduler ? this.scheduler.enabled : false,
       timestamp: new Date().toISOString(),
     }
 
@@ -285,9 +316,19 @@ class PortalSync {
       cv: this.cvManager ? this._buildCvPayload() : null,
       server: this.serverHealth ? this.serverHealth.getCurrent() : null,
       schedule: this.scheduler ? this.scheduler.getStatus() : null,
+      audio: (() => {
+        try {
+          const level = audio.getVolume()
+          return { level, muted: level === 0 }
+        } catch {
+          return null
+        }
+      })(),
     }
 
     // Snapshots de TODAS as câmeras por push (otimização 4G: portal serve do cache)
+    // Preferir frame do CV (RTSP principal, 16:9/1080p) quando disponível.
+    // Fallback para snapshot HTTP SD da câmera quando o CV ainda não estiver rodando.
     const cams = this.cameras.getAllStatus()
     if (cams.length > 0) {
       const snapshots = {}
@@ -295,7 +336,10 @@ class PortalSync {
         const cam = this.cameras.get(camStatus.id)
         if (!cam) return
         try {
-          const buffer = await cam.getSnapshot(false) // SD 640x480
+          const cvFrame = this.cvManager?.getFrame ? this.cvManager.getFrame(camStatus.id) : null
+          const buffer = cvFrame && cvFrame.length > 1000
+            ? cvFrame
+            : await cam.getSnapshot(false) // fallback SD 640x480
           snapshots[camStatus.id] = {
             data: buffer.toString('base64'),
             contentType: 'image/jpeg',
@@ -386,12 +430,27 @@ class PortalSync {
     }
   }
 
+  getStatus() {
+    return {
+      ...this._status,
+      enabled: this.enabled,
+      portalUrl: this.portalUrl,
+      retryDelayMs: this._retryDelay,
+      failureWindowSize: this._failureWindow.length,
+    }
+  }
+
   async _push() {
     if (!this._running) return
+
+    const startedAt = Date.now()
+    this._status.lastPushStartedAt = new Date(startedAt).toISOString()
+    this._status.pushCount++
 
     // Circuit breaker check
     if (this._isCircuitOpen()) {
       const waitMs = Math.max(this._circuitOpenUntil - Date.now(), 1_000)
+      this._status.nextIntervalMs = waitMs
       this._timer = setTimeout(() => this._push(), waitMs)
       return
     }
@@ -402,12 +461,19 @@ class PortalSync {
     try {
       const payload = await this._buildPayload()
       await this._httpPost(pushUrl, payload, this.apiKey)
+      this._status.lastPushOkAt = new Date().toISOString()
+      this._status.lastPushDurationMs = Date.now() - startedAt
       this._recordSuccess()
 
       if (this._running) {
-        this._timer = setTimeout(() => this._push(), this._getCurrentInterval())
+        const nextInterval = this._getCurrentInterval()
+        this._status.nextIntervalMs = nextInterval
+        this._timer = setTimeout(() => this._push(), nextInterval)
       }
     } catch (err) {
+      this._status.lastPushErrorAt = new Date().toISOString()
+      this._status.lastPushErrorMessage = err.message
+      this._status.lastPushDurationMs = Date.now() - startedAt
       console.error(`  ⚡ Portal sync: falha — ${err.message}`)
       this._recordFailure()
 
@@ -415,8 +481,10 @@ class PortalSync {
 
       if (this._circuitOpen) {
         const waitMs = Math.max(this._circuitOpenUntil - Date.now(), 1_000)
+        this._status.nextIntervalMs = waitMs
         this._timer = setTimeout(() => this._push(), waitMs)
       } else {
+        this._status.nextIntervalMs = this._retryDelay
         this._timer = setTimeout(() => this._push(), this._retryDelay)
       }
     }

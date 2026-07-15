@@ -303,7 +303,7 @@ async function generateDailyReport(config) {
     const html = htmlTemplate(`Relatório Diário — ${yesterday}`, content);
     const filename = `daily-${yesterday}.html`;
     const filepath = path.join(REPORTS_DIR, filename);
-    fs.writeFileSync(filepath, html, 'utf8');
+    await fs.promises.writeFile(filepath, html, 'utf8');
 
     console.log(`[Report Generator] Daily report saved: ${filepath}`);
     return { success: true, path: filepath };
@@ -417,7 +417,7 @@ async function generateWeeklyReport(config) {
     const html = htmlTemplate(`Relatório Semanal — ${firstDay} a ${lastDay}`, content);
     const filename = `weekly-${lastDay}.html`;
     const filepath = path.join(REPORTS_DIR, filename);
-    fs.writeFileSync(filepath, html, 'utf8');
+    await fs.promises.writeFile(filepath, html, 'utf8');
 
     console.log(`[Report Generator] Weekly report saved: ${filepath}`);
     return { success: true, path: filepath };

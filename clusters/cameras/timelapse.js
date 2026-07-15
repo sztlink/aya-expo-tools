@@ -32,9 +32,14 @@ class TimelapseCapture {
     this._capturing = false
     this._stats = {
       started: null,
+      running: false,
+      capturing: false,
       captures: 0,
       errors: 0,
+      lastAttempt: null,
       lastCapture: null,
+      lastErrorAt: null,
+      lastErrorMessage: null,
     }
   }
 
@@ -45,6 +50,7 @@ class TimelapseCapture {
     try { fs.mkdirSync(BASE_DIR, { recursive: true }) } catch { /* ok */ }
 
     this._stats.started = new Date().toISOString()
+    this._stats.running = true
     console.log(`  📸 Timelapse capture started (every ${this.interval / 1000}s)`)
 
     // First capture after 10s (let cameras initialize)
@@ -53,6 +59,8 @@ class TimelapseCapture {
   }
 
   stop() {
+    this._stats.running = false
+    this._stats.capturing = false
     if (this._timer) {
       clearInterval(this._timer)
       this._timer = null
@@ -62,41 +70,50 @@ class TimelapseCapture {
   async _capture() {
     if (this._capturing) return  // skip if previous capture still running
     this._capturing = true
+    this._stats.capturing = true
 
     const now = new Date()
-    const dateStr = now.toISOString().slice(0, 10)  // YYYY-MM-DD
-    const timeStr = now.toTimeString().slice(0, 8).replace(/:/g, '')  // HHMMSS
+    this._stats.lastAttempt = now.toISOString()
 
-    const allCams = this.cameras.getAllStatus()
+    try {
+      const dateStr = now.toISOString().slice(0, 10)  // YYYY-MM-DD
+      const timeStr = now.toTimeString().slice(0, 8).replace(/:/g, '')  // HHMMSS
 
-    for (const camStatus of allCams) {
-      if (!camStatus.online) continue
+      const allCams = this.cameras.getAllStatus()
 
-      const cam = this.cameras.get(camStatus.id)
-      if (!cam) continue
+      for (const camStatus of allCams) {
+        if (!camStatus.online) continue
 
-      const camDir = path.join(BASE_DIR, dateStr, camStatus.id)
+        const cam = this.cameras.get(camStatus.id)
+        if (!cam) continue
 
-      try {
-        // Ensure directory
-        fs.mkdirSync(camDir, { recursive: true })
+        const camDir = path.join(BASE_DIR, dateStr, camStatus.id)
 
-        // Get snapshot (SD — lighter, sufficient for timelapse)
-        const buffer = await cam.getSnapshot(false)
-        if (!buffer || buffer.length < 1000) continue  // skip bad frames
+        try {
+          // Ensure directory
+          fs.mkdirSync(camDir, { recursive: true })
 
-        const filePath = path.join(camDir, `${timeStr}.jpg`)
-        fs.writeFileSync(filePath, buffer)
+          // Get snapshot (SD — lighter, sufficient for timelapse)
+          const buffer = await cam.getSnapshot(false)
+          if (!buffer || buffer.length < 1000) continue  // skip bad frames
 
-        this._stats.captures++
-        this._stats.lastCapture = now.toISOString()
-      } catch (err) {
-        this._stats.errors++
-        // Silent — don't spam logs for offline cameras
+          const filePath = path.join(camDir, `${timeStr}.jpg`)
+          fs.writeFileSync(filePath, buffer)
+
+          this._stats.captures++
+          this._stats.lastCapture = now.toISOString()
+          this._stats.lastErrorMessage = null
+        } catch (err) {
+          this._stats.errors++
+          this._stats.lastErrorAt = new Date().toISOString()
+          this._stats.lastErrorMessage = err.message
+          // Silent — don't spam logs for offline cameras
+        }
       }
+    } finally {
+      this._capturing = false
+      this._stats.capturing = false
     }
-
-    this._capturing = false
   }
 
   /** Get capture stats */

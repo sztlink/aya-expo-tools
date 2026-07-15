@@ -4,12 +4,31 @@ const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
 const fs = require('fs');
+const runtimeLog = require('./runtime-log');
 
 // ─── Log Functions ─────────────────────────────────────────
 const LOG_PATH = path.join(__dirname, '..', 'config', 'log.json');
 
 // Cache em memória — evita readFileSync/writeFileSync a cada addLogEntry
 let _logCache = null;
+
+function normalizeLogEntry(messageOrEntry, type = 'system', meta = {}) {
+  if (messageOrEntry && typeof messageOrEntry === 'object' && !Array.isArray(messageOrEntry)) {
+    return {
+      timestamp: new Date().toISOString(),
+      type: 'system',
+      ...messageOrEntry,
+      message: String(messageOrEntry.message || ''),
+    };
+  }
+
+  return {
+    message: String(messageOrEntry || ''),
+    type,
+    timestamp: new Date().toISOString(),
+    ...(meta && typeof meta === 'object' ? meta : {}),
+  };
+}
 
 function readLog() {
   if (_logCache) return [..._logCache]; // retorna cópia para evitar mutação externa
@@ -21,14 +40,14 @@ function readLog() {
 }
 
 function writeLog(entries) {
-  _logCache = entries.slice(0, 200); // mantém cache sincronizado
+  _logCache = entries.slice(0, 200).map(entry => normalizeLogEntry(entry)); // mantém cache sincronizado
   // Escrita assíncrona — não bloqueia event loop
-  fs.writeFile(LOG_PATH, JSON.stringify(entries, null, 2), () => {});
+  fs.writeFile(LOG_PATH, JSON.stringify(_logCache, null, 2), () => {});
 }
 
-function addLogEntry(message, type = 'system') {
+function addLogEntry(messageOrEntry, type = 'system', meta = {}) {
   if (!_logCache) readLog(); // inicializa cache se necessário
-  _logCache.unshift({ message, type, timestamp: new Date().toISOString() });
+  _logCache.unshift(normalizeLogEntry(messageOrEntry, type, meta));
   if (_logCache.length > 200) _logCache.splice(200);
   // Escrita assíncrona — não bloqueia event loop
   fs.writeFile(LOG_PATH, JSON.stringify(_logCache, null, 2), () => {});
@@ -76,6 +95,59 @@ function createApp(config) {
 
   // Middleware
   app.use(express.json({ limit: '10mb' }));
+
+  // Telemetria de requests HTTP (somente API)
+  app.use((req, res, next) => {
+    if (!req.path.startsWith('/api')) return next();
+
+    const startedAt = Date.now();
+    const startedIso = new Date(startedAt).toISOString();
+    const remote = req.socket?.remoteAddress || null;
+    let finished = false;
+
+    const inflightTimer = setTimeout(() => {
+      if (finished || res.writableEnded) return;
+      runtimeLog.appendJsonl('http-slow.jsonl', {
+        phase: 'in-flight',
+        method: req.method,
+        path: req.originalUrl || req.url,
+        startedAt: startedIso,
+        durationMs: Date.now() - startedAt,
+        remote,
+      });
+    }, 10000);
+    if (inflightTimer.unref) inflightTimer.unref();
+
+    const finalize = (phase) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(inflightTimer);
+
+      const durationMs = Date.now() - startedAt;
+      const payload = {
+        phase,
+        method: req.method,
+        path: req.originalUrl || req.url,
+        startedAt: startedIso,
+        durationMs,
+        statusCode: res.statusCode,
+        remote,
+      };
+
+      if (phase !== 'finish' || res.statusCode >= 500) {
+        runtimeLog.appendJsonl('http-errors.jsonl', payload);
+      } else if (durationMs >= 1000) {
+        runtimeLog.appendJsonl('http-slow.jsonl', payload);
+      }
+    };
+
+    res.on('finish', () => finalize('finish'));
+    res.on('close', () => {
+      if (!res.writableEnded) finalize('close');
+    });
+
+    next();
+  });
 
   // ─── Auth Middleware (Story 4-5) ──────────────────────────
   const AYA_TOKEN = process.env.AYA_TOKEN;
@@ -172,6 +244,18 @@ function createApp(config) {
   return { app, server };
 }
 
+function logRuntimeError(type, errLike) {
+  const err = errLike instanceof Error ? errLike : new Error(String(errLike || type));
+  runtimeLog.appendJsonl('runtime-errors.jsonl', {
+    type,
+    pid: process.pid,
+    uptimeSec: Math.floor(process.uptime()),
+    message: err.message,
+    stack: err.stack,
+    memory: process.memoryUsage(),
+  }, { sync: true });
+}
+
 // ─── Start Server ──────────────────────────────────────────
 function start(config, { app, server }, managers = {}) {
   const PORT = config?.server?.port || 3000;
@@ -185,38 +269,45 @@ function start(config, { app, server }, managers = {}) {
     if (managers.projectors) managers.projectors.startPolling(config.pjlink?.pollInterval || 30000);
     if (managers.cameras) managers.cameras.startPolling(30000);
     if (managers.scheduler) managers.scheduler.start();
+    if (managers.serverHealth) managers.serverHealth.start();
     if (managers.portalSync) managers.portalSync.start();
+    if (managers.runtimeMonitor) managers.runtimeMonitor.start(managers);
     if (managers.cvManager) {
       managers.cvManager.start();
       if (managers.cvLogger) managers.cvLogger.start(managers.cvManager);
     }
-    if (managers.serverHealth) managers.serverHealth.start();
     if (managers.timelapse) managers.timelapse.start();
   });
 
   // Uncaught errors — log but don't crash
   process.on('uncaughtException', (err) => {
+    logRuntimeError('uncaughtException', err);
     console.error(`  ❌ Uncaught exception: ${err.message}`);
     console.error(err.stack);
   });
   process.on('unhandledRejection', (reason) => {
+    logRuntimeError('unhandledRejection', reason);
     console.error(`  ❌ Unhandled rejection: ${reason}`);
   });
 
-  // Graceful shutdown
-  process.on('SIGINT', () => {
+  const shutdown = () => {
     console.log('\n  Shutting down...');
     if (managers.projectors) managers.projectors.stopPolling();
     if (managers.cameras) managers.cameras.stopPolling();
     if (managers.scheduler) managers.scheduler.stop();
     if (managers.portalSync) managers.portalSync.stop();
+    if (managers.runtimeMonitor) managers.runtimeMonitor.stop();
     if (managers.cvLogger) managers.cvLogger.stop();
     if (managers.cvManager) managers.cvManager.stop();
     if (managers.serverHealth) managers.serverHealth.stop();
     if (managers.timelapse) managers.timelapse.stop();
     server.close();
     process.exit(0);
-  });
+  };
+
+  // Graceful shutdown
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }
 
 module.exports = {

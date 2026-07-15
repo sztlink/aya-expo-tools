@@ -21,9 +21,10 @@ module.exports = function(app, cluster) {
 
   app.get('/api/cameras/:id/snapshot', async (req, res) => {
     try {
-      const cam = cameras.getById(req.params.id);
+      const cam = cameras.get(req.params.id);
       if (!cam) return res.status(404).json({ ok: false, error: 'Camera not found', code: 'NOT_FOUND' });
-      const snapshot = await cameras.getSnapshot(cam);
+      const hd = req.query?.hd === '1';
+      const snapshot = await cam.getSnapshot(hd);
       if (!snapshot) return res.status(500).json({ ok: false, error: 'Snapshot failed', code: 'SNAPSHOT_FAILED' });
       res.set('Content-Type', 'image/jpeg');
       res.send(snapshot);
@@ -50,14 +51,18 @@ module.exports = function(app, cluster) {
   });
 
   app.get('/api/timelapse/:date/:camId/:filename', (req, res) => {
-    const framePath = timelapse.getFramePath ? timelapse.getFramePath(req.params.date, req.params.camId, req.params.filename) : null;
-    if (!framePath) return res.status(404).json({ ok: false, error: 'Frame not found', code: 'NOT_FOUND' });
-    res.sendFile(framePath);
+    const buffer = timelapse.getFrame ? timelapse.getFrame(req.params.date, req.params.camId, req.params.filename) : null;
+    if (!buffer) return res.status(404).json({ ok: false, error: 'Frame not found', code: 'NOT_FOUND' });
+    res.set('Content-Type', 'image/jpeg');
+    res.send(buffer);
   });
 
   app.get('/api/timelapse/:date/:camId/at/:time', (req, res) => {
-    const framePath = timelapse.getFrameAt ? timelapse.getFrameAt(req.params.date, req.params.camId, req.params.time) : null;
-    if (!framePath) return res.status(404).json({ ok: false, error: 'Frame not found', code: 'NOT_FOUND' });
-    res.sendFile(framePath);
+    const frame = timelapse.getFrameAt ? timelapse.getFrameAt(req.params.date, req.params.camId, req.params.time) : null;
+    if (!frame?.file) return res.status(404).json({ ok: false, error: 'Frame not found', code: 'NOT_FOUND' });
+    const buffer = timelapse.getFrame ? timelapse.getFrame(req.params.date, req.params.camId, frame.file) : null;
+    if (!buffer) return res.status(404).json({ ok: false, error: 'Frame not found', code: 'NOT_FOUND' });
+    res.set('Content-Type', 'image/jpeg');
+    res.send(buffer);
   });
 };

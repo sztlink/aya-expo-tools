@@ -1,5 +1,10 @@
 'use strict';
 
+const path = require('path');
+const fs = require('fs');
+const cvLogger = require('../data/cv-logger');
+const cvReport = require('../data/cv-report');
+
 // CV + ReID routes extracted from server/index.js
 // Lines 867-1018
 module.exports = function(app, cluster) {
@@ -89,44 +94,71 @@ module.exports = function(app, cluster) {
   });
 
   app.get('/api/cv/counter/history', (req, res) => {
-    res.json({ ok: true, data: cvManager.getCounterHistory() });
+    const days = cvLogger.listDays().map(day => {
+      const summary = cvLogger.getDailySummary(day.date);
+      return {
+        ...day,
+        counter: summary?.counter || null,
+        peak: summary?.peak || null,
+      };
+    });
+    res.json({ ok: true, data: days });
   });
 
   app.get('/api/cv/counter/history/:date', (req, res) => {
-    res.json({ ok: true, data: cvManager.getCounterHistory(req.params.date) });
+    const summary = cvLogger.getDailySummary(req.params.date);
+    if (summary?.counter) return res.json({ ok: true, data: summary.counter });
+
+    const legacyCounterFile = path.join(__dirname, 'python', 'output', 'counter', `daily-${req.params.date}.json`);
+    if (!fs.existsSync(legacyCounterFile)) {
+      return res.status(404).json({ ok: false, error: 'No data for this date', code: 'NOT_FOUND' });
+    }
+    try {
+      return res.json({ ok: true, data: JSON.parse(fs.readFileSync(legacyCounterFile, 'utf8')) });
+    } catch (err) {
+      return res.status(500).json({ ok: false, error: err.message, code: 'COUNTER_HISTORY_ERROR' });
+    }
   });
 
   app.get('/api/cv/daily', (req, res) => {
-    res.json({ ok: true, data: cvManager.getDailyData() });
+    res.json({ ok: true, data: cvLogger.listDays() });
   });
 
   app.get('/api/cv/daily/:date', (req, res) => {
-    res.json({ ok: true, data: cvManager.getDailyData(req.params.date) });
+    const summary = cvLogger.getDailySummary(req.params.date);
+    if (!summary) return res.status(404).json({ ok: false, error: 'No data for this date', code: 'NOT_FOUND' });
+    res.json({ ok: true, data: summary });
   });
 
   app.get('/api/cv/daily/today/summary', (req, res) => {
-    res.json({ ok: true, data: cvManager.getTodaySummary() });
+    const summary = cvLogger.getDailySummary();
+    if (!summary) return res.json({ ok: true, data: { samples: 0, message: 'No samples yet' } });
+    res.json({ ok: true, data: summary });
   });
 
-  // Reports (delegate to data cluster later, for now direct)
+  // Reports
   app.get('/api/cv/report/week', (req, res) => {
-    res.json({ ok: true, data: cvManager.getReport ? cvManager.getReport('week') : {} });
+    res.json({ ok: true, data: cvReport.thisWeek() });
   });
 
   app.get('/api/cv/report/month', (req, res) => {
-    res.json({ ok: true, data: cvManager.getReport ? cvManager.getReport('month') : {} });
+    res.json({ ok: true, data: cvReport.thisMonth() });
   });
 
   app.get('/api/cv/report/last7', (req, res) => {
-    res.json({ ok: true, data: cvManager.getReport ? cvManager.getReport('last7') : {} });
+    res.json({ ok: true, data: cvReport.last7() });
   });
 
   app.get('/api/cv/report/last30', (req, res) => {
-    res.json({ ok: true, data: cvManager.getReport ? cvManager.getReport('last30') : {} });
+    res.json({ ok: true, data: cvReport.last30() });
   });
 
   app.get('/api/cv/report/:from/:to', (req, res) => {
-    res.json({ ok: true, data: cvManager.getReport ? cvManager.getReport(req.params.from, req.params.to) : {} });
+    const { from, to } = req.params;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+      return res.status(400).json({ ok: false, error: 'Format: YYYY-MM-DD', code: 'INVALID_DATE_FORMAT' });
+    }
+    res.json({ ok: true, data: cvReport.aggregate(from, to) });
   });
 
   // ─── ReID Routes ───────────────────────────────────────────────────────────

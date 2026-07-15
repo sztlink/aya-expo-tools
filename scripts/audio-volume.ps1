@@ -21,69 +21,84 @@ interface IMMDevice {
 
 [Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 interface IAudioEndpointVolume {
-    int NotImpl1();
-    int NotImpl2();
-    int NotImpl3();
+    int RegisterControlChangeNotify(IntPtr pNotify);
+    int UnregisterControlChangeNotify(IntPtr pNotify);
+    [PreserveSig] int GetChannelCount(out uint channelCount);
     [PreserveSig] int SetMasterVolumeLevel(float levelDB, Guid ctx);
     [PreserveSig] int SetMasterVolumeLevelScalar(float level, Guid ctx);
     [PreserveSig] int GetMasterVolumeLevel(out float levelDB);
     [PreserveSig] int GetMasterVolumeLevelScalar(out float level);
-    int NotImpl4();
-    int NotImpl5();
-    int NotImpl6();
-    int NotImpl7();
-    int NotImpl8();
-    int NotImpl9();
-    [PreserveSig] int GetMute(out bool mute);
+    [PreserveSig] int SetChannelVolumeLevel(uint channelNumber, float levelDB, Guid ctx);
+    [PreserveSig] int SetChannelVolumeLevelScalar(uint channelNumber, float level, Guid ctx);
+    [PreserveSig] int GetChannelVolumeLevel(uint channelNumber, out float levelDB);
+    [PreserveSig] int GetChannelVolumeLevelScalar(uint channelNumber, out float level);
     [PreserveSig] int SetMute(bool mute, Guid ctx);
+    [PreserveSig] int GetMute(out bool mute);
+    [PreserveSig] int GetVolumeStepInfo(out uint step, out uint stepCount);
+    [PreserveSig] int VolumeStepUp(Guid ctx);
+    [PreserveSig] int VolumeStepDown(Guid ctx);
+    [PreserveSig] int QueryHardwareSupport(out uint mask);
+    [PreserveSig] int GetVolumeRange(out float minDB, out float maxDB, out float incrementDB);
 }
 
-public class AudioCtrl {
+public static class AudioCtrl {
+    const int CLSCTX_ALL = 23;
+
+    static void Check(int hr, string op) {
+        if (hr != 0) Marshal.ThrowExceptionForHR(hr);
+    }
+
     static IAudioEndpointVolume GetVol() {
         var en = (IMMDeviceEnumerator)new MMDeviceEnumerator();
-        IMMDevice dev; en.GetDefaultAudioEndpoint(0, 1, out dev);
+        IMMDevice dev;
+        Check(en.GetDefaultAudioEndpoint(0, 1, out dev), "GetDefaultAudioEndpoint");
         var iid = typeof(IAudioEndpointVolume).GUID;
-        object o; dev.Activate(ref iid, 23, IntPtr.Zero, out o);
+        object o;
+        Check(dev.Activate(ref iid, CLSCTX_ALL, IntPtr.Zero, out o), "Activate");
         return (IAudioEndpointVolume)o;
     }
 
-    // Range: -96dB (silent) to 0dB (max). Step: 1.5dB.
-    // 0%=-96dB, 50%=-10dB, 80%=-3dB, 100%=0dB
-    static float PercentToDB(float pct) {
-        if (pct <= 0) return -96.0f;
-        if (pct >= 100) return 0.0f;
-        // Use logarithmic scale: dB = 20 * log10(pct/100)
-        return (float)(20.0 * Math.Log10(pct / 100.0));
+    public static int Get() {
+        var vol = GetVol();
+        bool mute;
+        float scalar;
+        Check(vol.GetMute(out mute), "GetMute");
+        Check(vol.GetMasterVolumeLevelScalar(out scalar), "GetMasterVolumeLevelScalar");
+        var pct = (int)Math.Round(Math.Max(0.0f, Math.Min(1.0f, scalar)) * 100.0f);
+        return mute ? 0 : pct;
     }
 
-    static float DBToPercent(float db) {
-        if (db <= -96.0f) return 0.0f;
-        if (db >= 0.0f) return 100.0f;
-        return (float)(Math.Pow(10.0, db / 20.0) * 100.0);
-    }
+    public static int Set(int pct) {
+        var vol = GetVol();
+        var clamped = Math.Max(0, Math.Min(100, pct));
 
-    public static float Get() {
-        float db; GetVol().GetMasterVolumeLevel(out db);
-        return DBToPercent(db);
-    }
+        if (clamped <= 0) {
+            Check(vol.SetMute(true, Guid.Empty), "SetMute(true)");
+            Check(vol.SetMasterVolumeLevelScalar(0.0f, Guid.Empty), "SetMasterVolumeLevelScalar(0)");
+            return 0;
+        }
 
-    public static void Set(float pct) {
-        float db = PercentToDB(Math.Max(0, Math.Min(100, pct)));
-        GetVol().SetMasterVolumeLevel(db, Guid.Empty);
+        Check(vol.SetMute(false, Guid.Empty), "SetMute(false)");
+        Check(vol.SetMasterVolumeLevelScalar(clamped / 100.0f, Guid.Empty), "SetMasterVolumeLevelScalar");
+        return Get();
     }
 }
 '@
 
-Add-Type -TypeDefinition $code -ErrorAction Stop
+try {
+    Add-Type -TypeDefinition $code -ErrorAction Stop
 
-if ($Action -eq "get") {
-    $v = [AudioCtrl]::Get()
-    Write-Output ([int][Math]::Round($v))
-} elseif ($Action -eq "set") {
-    [AudioCtrl]::Set($Level)
-    # Read back actual level
-    $v = [AudioCtrl]::Get()
-    Write-Output ([int][Math]::Round($v))
-} else {
-    Write-Output "error:unknown_action"
+    if ($Action -eq "get") {
+        $v = [AudioCtrl]::Get()
+        Write-Output ([int][Math]::Round($v))
+    } elseif ($Action -eq "set") {
+        $v = [AudioCtrl]::Set($Level)
+        Write-Output ([int][Math]::Round($v))
+    } else {
+        Write-Output "error:unknown_action"
+        exit 1
+    }
+} catch {
+    Write-Output ("error:" + $_.Exception.Message)
+    exit 1
 }

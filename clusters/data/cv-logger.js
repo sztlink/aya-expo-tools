@@ -24,6 +24,7 @@ let _timer = null;
 let _midnightTimer = null;
 let _cvManager = null;
 let _currentDate = null;
+const _dtfCache = new Map();
 
 // ── Ensure directories ──────────────────────────────────────────────
 function ensureDirs() {
@@ -31,13 +32,57 @@ function ensureDirs() {
   fs.mkdirSync(DAILY_DIR, { recursive: true });
 }
 
+// ── Timezone helpers ────────────────────────────────────────────────
+function getTimezone() {
+  return _cvManager?.config?.schedule?.timezone || 'America/Sao_Paulo';
+}
+
+function getFormatter(timeZone) {
+  if (!_dtfCache.has(timeZone)) {
+    _dtfCache.set(timeZone, new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }));
+  }
+  return _dtfCache.get(timeZone);
+}
+
+function getZonedParts(dateLike = new Date(), timeZone = getTimezone()) {
+  const date = dateLike instanceof Date ? dateLike : new Date(dateLike);
+  if (Number.isNaN(date.getTime())) return { date: null, hour: null };
+
+  const parts = Object.fromEntries(
+    getFormatter(timeZone)
+      .formatToParts(date)
+      .filter(part => part.type !== 'literal')
+      .map(part => [part.type, part.value])
+  );
+
+  return {
+    date: parts.year && parts.month && parts.day ? `${parts.year}-${parts.month}-${parts.day}` : null,
+    hour: parts.hour || null,
+  };
+}
+
 // ── Today string ────────────────────────────────────────────────────
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  return getZonedParts(new Date()).date;
 }
 
 function nowISO() {
   return new Date().toISOString();
+}
+
+function positiveCounterDelta(current, previous) {
+  const curr = Number.isFinite(current) ? current : 0;
+  const prev = Number.isFinite(previous) ? previous : 0;
+  return curr >= prev ? (curr - prev) : curr;
 }
 
 // ── Sample: snapshot of zones + counter → append to JSONL ───────────
@@ -94,33 +139,86 @@ function sample() {
   }
 }
 
-// ── Consolidate: daily summary from JSONL ───────────────────────────
-function consolidate(date) {
-  const file = path.join(LOGS_DIR, `${date}.jsonl`);
-  if (!fs.existsSync(file)) return null;
+function readEntriesForDate(date) {
+  ensureDirs();
+  const files = fs.readdirSync(LOGS_DIR)
+    .filter(f => f.endsWith('.jsonl'))
+    .sort();
 
-  try {
-    const lines = fs.readFileSync(file, 'utf8').trim().split('\n')
-      .map(l => { try { return JSON.parse(l); } catch { return null; } })
-      .filter(Boolean);
+  const entries = [];
+  for (const name of files) {
+    const file = path.join(LOGS_DIR, name);
+    const raw = fs.readFileSync(file, 'utf8').trim();
+    if (!raw) continue;
 
-    if (lines.length === 0) return null;
-
-    // ── Counter final — use MAX entries/exits seen across all samples ──
-    // (handles restarts: counter may reset mid-day, we want cumulative max)
-    let maxEntries = 0, maxExits = 0;
-    let lastHourly = {};
-    for (const l of lines) {
-      if (l.counter) {
-        if (l.counter.entries > maxEntries) maxEntries = l.counter.entries;
-        if (l.counter.exits > maxExits) maxExits = l.counter.exits;
-        if (l.counterHourly && Object.keys(l.counterHourly).length > 0) {
-          lastHourly = l.counterHourly;
+    for (const line of raw.split('\n')) {
+      try {
+        const entry = JSON.parse(line);
+        if (!entry?.t) continue;
+        if (getZonedParts(entry.t).date === date) {
+          entries.push(entry);
         }
+      } catch {
+        // ignore malformed line
       }
     }
-    const counterFinal = { entries: maxEntries, exits: maxExits, occupancy: Math.max(0, maxEntries - maxExits) };
-    const counterHourly = lastHourly;
+  }
+
+  return entries.sort((a, b) => String(a.t).localeCompare(String(b.t)));
+}
+
+// ── Consolidate: daily summary from JSONL ───────────────────────────
+function consolidate(date) {
+  try {
+    const lines = readEntriesForDate(date);
+    if (lines.length === 0) return null;
+
+    // ── Counter final — derive DAILY deltas from consecutive samples ──
+    // Handles three cases:
+    // 1) counter starts the day already > 0 (carry-over from previous day) → baseline ignored
+    // 2) counter grows normally during the day → accumulate positive deltas
+    // 3) counter resets mid-day/restart → negative jump, so current value becomes the new delta
+    const counterLines = lines.filter(l => l.counter && (
+      l.counter.entries !== undefined || l.counter.exits !== undefined
+    ));
+
+    let dailyEntries = 0;
+    let dailyExits = 0;
+    const counterHourly = {};
+    const firstCounter = counterLines[0]?.counter || {};
+    let peakEntries = Number.isFinite(firstCounter.entries) ? firstCounter.entries : 0;
+    let peakExits = Number.isFinite(firstCounter.exits) ? firstCounter.exits : 0;
+
+    for (let i = 1; i < counterLines.length; i++) {
+      const current = counterLines[i];
+      const currentEntries = Number.isFinite(current.counter?.entries) ? current.counter.entries : 0;
+      const currentExits = Number.isFinite(current.counter?.exits) ? current.counter.exits : 0;
+      const hour = getZonedParts(current.t).hour || '00';
+      if (!counterHourly[hour]) counterHourly[hour] = { entries: 0, exits: 0 };
+
+      const hardEntriesReset = currentEntries < (peakEntries - 20) && currentEntries <= Math.max(5, Math.floor(peakEntries * 0.5));
+      const hardExitsReset = currentExits < (peakExits - 20) && currentExits <= Math.max(5, Math.floor(peakExits * 0.5));
+
+      if (hardEntriesReset) peakEntries = currentEntries;
+      if (hardExitsReset) peakExits = currentExits;
+
+      const deltaEntries = currentEntries > peakEntries ? (currentEntries - peakEntries) : 0;
+      const deltaExits = currentExits > peakExits ? (currentExits - peakExits) : 0;
+
+      dailyEntries += deltaEntries;
+      dailyExits += deltaExits;
+      counterHourly[hour].entries += deltaEntries;
+      counterHourly[hour].exits += deltaExits;
+
+      if (currentEntries > peakEntries) peakEntries = currentEntries;
+      if (currentExits > peakExits) peakExits = currentExits;
+    }
+
+    const counterFinal = {
+      entries: dailyEntries,
+      exits: dailyExits,
+      occupancy: Math.max(0, dailyEntries - dailyExits),
+    };
 
     // ── Zone stats ──
     const zoneIds = Object.keys(lines[0].zones || {});
@@ -150,7 +248,7 @@ function consolidate(date) {
     // ── Hourly breakdown (from zone samples) ──
     const hourlyZones = {};
     for (const entry of lines) {
-      const hour = entry.t.slice(11, 13);
+      const hour = getZonedParts(entry.t).hour || '00';
       if (!hourlyZones[hour]) hourlyZones[hour] = { samples: 0, total: 0, zones: {} };
       hourlyZones[hour].samples++;
       hourlyZones[hour].total += entry.total || 0;
@@ -216,7 +314,7 @@ function scheduleMidnight() {
   const ms = midnight.getTime() - now.getTime();
 
   _midnightTimer = setTimeout(() => {
-    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const yesterday = getZonedParts(new Date(Date.now() - 86400000)).date;
     console.log(`[CV Logger] Midnight consolidation: ${yesterday}`);
     consolidate(yesterday);
     scheduleMidnight(); // schedule next
@@ -276,25 +374,54 @@ function getDailySummary(date) {
  */
 function listDays() {
   ensureDirs();
-  // Check both JSONL (raw) and daily (consolidated)
-  const jsonlDates = fs.readdirSync(LOGS_DIR)
-    .filter(f => f.endsWith('.jsonl'))
-    .map(f => f.replace('.jsonl', ''));
+
+  const rawFiles = fs.readdirSync(LOGS_DIR).filter(f => f.endsWith('.jsonl')).sort();
+  const rawDates = new Set();
+
+  for (const name of rawFiles) {
+    const file = path.join(LOGS_DIR, name);
+    const raw = fs.readFileSync(file, 'utf8').trim();
+    if (!raw) continue;
+
+    for (const line of raw.split('\n')) {
+      try {
+        const entry = JSON.parse(line);
+        const date = entry?.t ? getZonedParts(entry.t).date : null;
+        if (date) rawDates.add(date);
+      } catch {
+        // ignore malformed line
+      }
+    }
+  }
 
   const dailyDates = fs.readdirSync(DAILY_DIR)
     .filter(f => f.endsWith('.json'))
     .map(f => f.replace('.json', ''));
 
-  const allDates = [...new Set([...jsonlDates, ...dailyDates])].sort().reverse();
+  const allDates = [...new Set([...rawDates, ...dailyDates])].sort().reverse();
 
   return allDates.map(date => {
-    const jsonlFile = path.join(LOGS_DIR, `${date}.jsonl`);
-    const dailyFile = path.join(DAILY_DIR, `${date}.json`);
+    const summary = getDailySummary(date);
     return {
       date,
-      hasRaw: fs.existsSync(jsonlFile),
-      hasSummary: fs.existsSync(dailyFile),
-      rawSizeKB: fs.existsSync(jsonlFile) ? Math.round(fs.statSync(jsonlFile).size / 1024) : 0,
+      hasRaw: rawDates.has(date),
+      hasSummary: !!summary,
+      rawSizeKB: rawFiles.reduce((total, name) => {
+        const file = path.join(LOGS_DIR, name);
+        const raw = fs.readFileSync(file, 'utf8').trim();
+        if (!raw) return total;
+        let containsDate = false;
+        for (const line of raw.split('\n')) {
+          try {
+            const entry = JSON.parse(line);
+            if (entry?.t && getZonedParts(entry.t).date === date) {
+              containsDate = true;
+              break;
+            }
+          } catch {}
+        }
+        return containsDate ? total + Math.round(fs.statSync(file).size / 1024) : total;
+      }, 0),
     };
   });
 }

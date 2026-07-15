@@ -27,10 +27,10 @@ module.exports = function(app, { config, configName, configPath, projectors, cam
       fs.writeFileSync(cfgPath, JSON.stringify(updated, null, 2));
       // Update in-memory config and reload all managers
       Object.assign(config, updated);
-      projectors.reload(config);
-      cameras.reload(config);
-      scheduler.updateConfig(config);
-      cvManager.reload(config);
+      if (projectors?.reload) projectors.reload(config);
+      if (cameras?.reload) cameras.reload(config);
+      if (scheduler?.updateConfig) scheduler.updateConfig(config);
+      if (cvManager?.reload) cvManager.reload(config);
       res.json({ ok: true, config: updated });
     } catch(e) {
       res.status(500).json({ error: e.message });

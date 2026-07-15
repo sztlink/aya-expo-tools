@@ -53,7 +53,7 @@ class Scheduler {
       if (times.open) {
         const [h, m] = times.open.split(':').map(Number);
         const cronExpr = `${m} ${h} * * ${dayNum}`;
-        const job = cron.schedule(cronExpr, () => this.executeOpen(), { timezone: tz });
+        const job = cron.schedule(cronExpr, () => this.executeOpen(), { timezone: tz, recoverMissedExecutions: true });
         this.jobs.push(job);
         jobCount++;
       }
@@ -61,7 +61,7 @@ class Scheduler {
       if (times.close) {
         const [h, m] = times.close.split(':').map(Number);
         const cronExpr = `${m} ${h} * * ${dayNum}`;
-        const job = cron.schedule(cronExpr, () => this.executeClose(), { timezone: tz });
+        const job = cron.schedule(cronExpr, () => this.executeClose(), { timezone: tz, recoverMissedExecutions: true });
         this.jobs.push(job);
         jobCount++;
       }

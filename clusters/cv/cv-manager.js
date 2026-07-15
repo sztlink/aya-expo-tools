@@ -58,6 +58,7 @@ class CVManager extends EventEmitter {
   // ─── Public API ────────────────────────────────────────────────────────────
 
   start() {
+    this.enabled = this.cvConfig?.enabled !== false;
     if (!this.enabled) {
       console.log('  👁️ CV: desativado (cv.enabled = false no config)');
       return;
@@ -104,46 +105,54 @@ class CVManager extends EventEmitter {
   stop() {
     this.enabled = false;
 
+    // Snapshot current processes so a later start() is not killed by this stop() timeout.
+    const processEntries = [...this.processes.values()];
+    const reidEntries = [...this.reidProcesses.values()];
+    const counterEntries = [...this.counterProcesses.values()];
+    const singleCounter = this.counterProcess;
+
     // Collect PIDs before killing (needed for tree-kill on Windows)
     const pids = [];
-    for (const [camId, entry] of this.processes) {
-      console.log(`  👁️ CV [${camId}]: parando (PID ${entry.pid})...`);
+    for (const entry of processEntries) {
+      console.log(`  👁️ CV [${entry.camId}]: parando (PID ${entry.pid})...`);
       pids.push(entry.pid);
       try { entry.process.kill('SIGTERM'); } catch {}
     }
 
-    for (const [camId, entry] of this.reidProcesses) {
-      console.log(`  🔍 ReID [${camId}]: parando (PID ${entry.pid})...`);
+    for (const entry of reidEntries) {
+      console.log(`  🔍 ReID [${entry.camId}]: parando (PID ${entry.pid})...`);
       pids.push(entry.pid);
       try { entry.process.kill('SIGTERM'); } catch {}
     }
 
-    for (const [, cp] of this.counterProcesses) {
+    for (const cp of counterEntries) {
       if (cp) { pids.push(cp.pid); try { cp.process.kill('SIGTERM'); } catch {} }
     }
-    if (this.counterProcess) {
-      pids.push(this.counterProcess.pid);
-      try { this.counterProcess.process.kill('SIGTERM'); } catch {}
+    if (singleCounter) {
+      pids.push(singleCounter.pid);
+      try { singleCounter.process.kill('SIGTERM'); } catch {}
     }
 
+    // Clear current references immediately so a future start() can boot cleanly.
+    this.processes.clear();
+    this.reidProcesses.clear();
+    this.counterProcesses.clear();
+    this.counterProcess = null;
+    this._buffers.clear();
+    this._reidBuffers.clear();
+
     setTimeout(() => {
-      for (const [, entry] of this.processes) {
+      for (const entry of processEntries) {
         try { entry.process.kill('SIGKILL'); } catch {}
       }
-      for (const [, entry] of this.reidProcesses) {
+      for (const entry of reidEntries) {
         try { entry.process.kill('SIGKILL'); } catch {}
       }
-      this.processes.clear();
-      this.reidProcesses.clear();
-      this._buffers.clear();
-      this._reidBuffers.clear();
-      for (const [role, cp] of this.counterProcesses) {
+      for (const cp of counterEntries) {
         if (cp) { try { cp.process.kill('SIGKILL'); } catch {} }
       }
-      this.counterProcesses.clear();
-      if (this.counterProcess) {
-        try { this.counterProcess.process.kill('SIGKILL'); } catch {}
-        this.counterProcess = null;
+      if (singleCounter) {
+        try { singleCounter.process.kill('SIGKILL'); } catch {}
       }
 
       // Windows: taskkill /T kills entire process tree (catches orphan children
@@ -197,19 +206,40 @@ class CVManager extends EventEmitter {
     }
 
     // Agrega zonas respeitando strategy por zona:
-    //   "max" (padrão) → câmeras no mesmo espaço físico (ex: cam-1 + cam-3 na sala imersiva)
-    //   "sum"          → câmeras em espaços distintos sem sobreposição
+    //   "max"   → heurística conservadora para câmeras no mesmo espaço físico
+    //   "sum"   → soma zonas distintas sem sobreposição
+    //   "single"→ uma câmera domina a zona
+    //   "fused" → deduplicação geométrica entre 2 câmeras calibradas (MVP)
     const zonesConfig = this.cvConfig.zones || [];
     const aggregatedZones = {};
+    const fusionZones = {};
 
     for (const zone of zonesConfig) {
       const zoneStrategy = zone.strategy || 'max';
       const cameras = zone.cameras || {};
-      // Suporta cameras como dict (novo) ou array (legado)
       const zoneCamIds = Array.isArray(cameras) ? cameras : Object.keys(cameras);
       const values = zoneCamIds
         .map(cid => perCamera[cid]?.zones?.[zone.id])
         .filter(v => v !== undefined);
+
+      if (zoneStrategy === 'fused') {
+        const fused = this._computeFusedZone(zone, zoneCamIds);
+        const rawCounts = Object.fromEntries(zoneCamIds.map(cid => [cid, perCamera[cid]?.zones?.[zone.id] ?? 0]));
+        if (fused?.usable) {
+          aggregatedZones[zone.id] = fused.fusedCount;
+          fusionZones[zone.id] = fused;
+        } else {
+          aggregatedZones[zone.id] = values.length > 0 ? Math.max(...values) : 0;
+          fusionZones[zone.id] = {
+            enabled: !!(this.cvConfig.fusion?.enabled),
+            usable: false,
+            fallback: 'max',
+            rawCounts,
+            reason: fused?.reason || 'Fusão geométrica não calibrada para esta zona',
+          };
+        }
+        continue;
+      }
 
       if (values.length === 0) {
         aggregatedZones[zone.id] = 0;
@@ -239,7 +269,6 @@ class CVManager extends EventEmitter {
       for (const cid of zoneCamIds) {
         const camDwell = perCamera[cid]?.dwell?.[zone.id];
         if (camDwell?.samples) {
-          // Collect raw avg to combine (best effort without raw data)
           allSamples.push(camDwell);
         }
         totalActive += perCamera[cid]?.activeVisitors?.[zone.id] || 0;
@@ -270,9 +299,14 @@ class CVManager extends EventEmitter {
       zonesConfig: (this.cvConfig.zones || []).map(z => ({
         id: z.id,
         name: z.name,
+        strategy: z.strategy || 'max',
         cameras: z.cameras,
         alert: z.alert,
       })),
+      fusion: Object.keys(fusionZones).length > 0 ? {
+        enabled: !!(this.cvConfig.fusion?.enabled),
+        zones: fusionZones,
+      } : null,
       perCamera,
       counter: counterData
         ? {
@@ -286,6 +320,187 @@ class CVManager extends EventEmitter {
       gpu: this.cvConfig.gpu ?? 0,
       protocol: 'jsonl-v2',
     };
+  }
+
+  _computeFusedZone(zone, zoneCamIds) {
+    const fusionConfig = this.cvConfig?.fusion || {};
+    if (!fusionConfig.enabled) {
+      return { usable: false, reason: 'cv.fusion.enabled = false' };
+    }
+    if (!Array.isArray(zoneCamIds) || zoneCamIds.length !== 2) {
+      return { usable: false, reason: 'MVP de fusão suporta exatamente 2 câmeras por zona' };
+    }
+
+    const [camA, camB] = zoneCamIds;
+    const projA = this._projectZoneDetections(camA, zone.id);
+    const projB = this._projectZoneDetections(camB, zone.id);
+
+    if (!projA.usable || !projB.usable) {
+      return {
+        usable: false,
+        reason: projA.reason || projB.reason || 'Falha ao projetar pontos para o plano comum',
+        rawCounts: {
+          [camA]: projA.rawCount,
+          [camB]: projB.rawCount,
+        },
+      };
+    }
+
+    const mergeDistance = Number(fusionConfig.mergeDistance ?? 80);
+    const matches = this._greedyBipartiteMatches(projA.points, projB.points, mergeDistance);
+    const fusedCount = projA.points.length + projB.points.length - matches.length;
+
+    return {
+      usable: true,
+      algorithm: 'pairwise-homography-greedy',
+      mergeDistance,
+      rawCounts: {
+        [camA]: projA.rawCount,
+        [camB]: projB.rawCount,
+      },
+      projectedCounts: {
+        [camA]: projA.points.length,
+        [camB]: projB.points.length,
+      },
+      matches: matches.length,
+      fusedCount,
+      sampleMatches: matches.slice(0, 10).map(m => ({
+        distance: +m.distance.toFixed(1),
+        a: { x: Math.round(m.a.point.x), y: Math.round(m.a.point.y) },
+        b: { x: Math.round(m.b.point.x), y: Math.round(m.b.point.y) },
+      })),
+    };
+  }
+
+  _projectZoneDetections(camId, zoneId) {
+    const cached = this._cache.get(camId);
+    const detections = (cached?.detections || []).filter(det => {
+      if (!Array.isArray(det.zones) || det.zones.length === 0) return true;
+      return det.zones.includes(zoneId);
+    });
+
+    const fusionCam = this.cvConfig?.fusion?.cameras?.[camId];
+    if (!fusionCam?.src || !fusionCam?.dst) {
+      return {
+        usable: false,
+        rawCount: detections.length,
+        reason: `cv.fusion.cameras.${camId} sem src/dst`,
+      };
+    }
+
+    const H = this._buildHomography(fusionCam.src, fusionCam.dst);
+    if (!H) {
+      return {
+        usable: false,
+        rawCount: detections.length,
+        reason: `Homografia inválida para ${camId}`,
+      };
+    }
+
+    const points = [];
+    for (const det of detections) {
+      const foot = { x: det.x + det.w / 2, y: det.y + det.h };
+      const mapped = this._applyHomography(H, foot);
+      if (!mapped) continue;
+      points.push({ camId, point: mapped, foot, detection: det });
+    }
+
+    return {
+      usable: true,
+      rawCount: detections.length,
+      points,
+    };
+  }
+
+  _greedyBipartiteMatches(pointsA, pointsB, threshold) {
+    const edges = [];
+    for (let i = 0; i < pointsA.length; i++) {
+      for (let j = 0; j < pointsB.length; j++) {
+        const dx = pointsA[i].point.x - pointsB[j].point.x;
+        const dy = pointsA[i].point.y - pointsB[j].point.y;
+        const distance = Math.hypot(dx, dy);
+        if (distance <= threshold) {
+          edges.push({ i, j, distance, a: pointsA[i], b: pointsB[j] });
+        }
+      }
+    }
+
+    edges.sort((a, b) => a.distance - b.distance);
+
+    const usedA = new Set();
+    const usedB = new Set();
+    const matches = [];
+
+    for (const edge of edges) {
+      if (usedA.has(edge.i) || usedB.has(edge.j)) continue;
+      usedA.add(edge.i);
+      usedB.add(edge.j);
+      matches.push(edge);
+    }
+
+    return matches;
+  }
+
+  _buildHomography(srcPoints, dstPoints) {
+    if (!Array.isArray(srcPoints) || !Array.isArray(dstPoints) || srcPoints.length < 4 || dstPoints.length < 4) {
+      return null;
+    }
+
+    const A = [];
+    const b = [];
+    for (let i = 0; i < 4; i++) {
+      const [x, y] = srcPoints[i];
+      const [X, Y] = dstPoints[i];
+      if (![x, y, X, Y].every(Number.isFinite)) return null;
+      A.push([x, y, 1, 0, 0, 0, -X * x, -X * y]);
+      b.push(X);
+      A.push([0, 0, 0, x, y, 1, -Y * x, -Y * y]);
+      b.push(Y);
+    }
+
+    const h = this._solveLinearSystem(A, b);
+    return h ? [h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], 1] : null;
+  }
+
+  _applyHomography(H, point) {
+    if (!Array.isArray(H) || H.length !== 9) return null;
+    const x = point.x;
+    const y = point.y;
+    const denom = H[6] * x + H[7] * y + H[8];
+    if (!Number.isFinite(denom) || Math.abs(denom) < 1e-6) return null;
+    return {
+      x: (H[0] * x + H[1] * y + H[2]) / denom,
+      y: (H[3] * x + H[4] * y + H[5]) / denom,
+    };
+  }
+
+  _solveLinearSystem(A, b) {
+    const n = A.length;
+    if (n === 0 || b.length !== n) return null;
+    const M = A.map((row, i) => [...row, b[i]]);
+
+    for (let col = 0; col < n; col++) {
+      let pivot = col;
+      for (let row = col + 1; row < n; row++) {
+        if (Math.abs(M[row][col]) > Math.abs(M[pivot][col])) pivot = row;
+      }
+      if (Math.abs(M[pivot][col]) < 1e-9) return null;
+      if (pivot !== col) [M[col], M[pivot]] = [M[pivot], M[col]];
+
+      const div = M[col][col];
+      for (let j = col; j <= n; j++) M[col][j] /= div;
+
+      for (let row = 0; row < n; row++) {
+        if (row === col) continue;
+        const factor = M[row][col];
+        if (Math.abs(factor) < 1e-12) continue;
+        for (let j = col; j <= n; j++) {
+          M[row][j] -= factor * M[col][j];
+        }
+      }
+    }
+
+    return M.map(row => row[n]);
   }
 
   getDetections(camId) {
@@ -328,7 +543,12 @@ class CVManager extends EventEmitter {
 
   getCounterData() { return this._readCounterData(); }
   getCounterFrame() {
-    const file = path.join(OUTPUT_DIR, 'counter', 'frame.jpg');
+    const mode = this.cvConfig?.counter?.mode || 'single';
+    const file = mode === 'dual'
+      ? (fs.existsSync(path.join(OUTPUT_DIR, 'counter', 'entry', 'frame.jpg'))
+          ? path.join(OUTPUT_DIR, 'counter', 'entry', 'frame.jpg')
+          : path.join(OUTPUT_DIR, 'counter', 'exit', 'frame.jpg'))
+      : path.join(OUTPUT_DIR, 'counter', 'frame.jpg');
     if (!fs.existsSync(file)) return null;
     try { return fs.readFileSync(file); } catch { return null; }
   }
@@ -756,20 +976,38 @@ class CVManager extends EventEmitter {
   _readCounterData() {
     const mode = this.cvConfig?.counter?.mode || 'single';
     if (mode === 'dual') {
+      const entryCfg = this.cvConfig?.counter?.entry || {};
+      const exitCfg = this.cvConfig?.counter?.exit || {};
       const entryFile = path.join(OUTPUT_DIR, 'counter', 'entry', 'count.json');
       const exitFile  = path.join(OUTPUT_DIR, 'counter', 'exit',  'count.json');
       const entry = this._readJsonFile(entryFile);
       const exit_ = this._readJsonFile(exitFile);
       if (!entry && !exit_) return null;
-      const entries = entry?.entries ?? 0;
-      const exits   = exit_?.exits   ?? 0;
+
+      // Ambas as portas são bidirecionais: somar entradas E saídas de ambos os processos
+      const entries = (entry?.entries ?? 0) + (exit_?.entries ?? 0);
+      const exits   = (entry?.exits ?? 0)   + (exit_?.exits ?? 0);
+      const hours = new Set([
+        ...Object.keys(entry?.hourly || {}),
+        ...Object.keys(exit_?.hourly || {}),
+      ]);
+      const hourly = {};
+      for (const hour of [...hours].sort()) {
+        hourly[hour] = {
+          entries: (entry?.hourly?.[hour]?.entries ?? 0) + (exit_?.hourly?.[hour]?.entries ?? 0),
+          exits:   (entry?.hourly?.[hour]?.exits ?? 0)   + (exit_?.hourly?.[hour]?.exits ?? 0),
+        };
+      }
+
       return {
         mode: 'dual',
         entries,
         exits,
         occupancy: Math.max(0, entries - exits),
-        entry: entry || null,
-        exit:  exit_  || null,
+        hourly,
+        date: entry?.date || exit_?.date || new Date().toISOString().slice(0, 10),
+        entry: entry ? { ...entry, camera: entryCfg.camera || 'cam-1', line: entryCfg.line || null } : { camera: entryCfg.camera || 'cam-1', line: entryCfg.line || null },
+        exit:  exit_  ? { ...exit_,  camera: exitCfg.camera || 'cam-2',  line: exitCfg.line || null } : { camera: exitCfg.camera || 'cam-2',  line: exitCfg.line || null },
         timestamp: new Date().toISOString(),
       };
     }
@@ -810,14 +1048,15 @@ class CVManager extends EventEmitter {
 
   _getConfigPath() {
     // Tenta ler do argv (--config=beleza-astral) ou usa o primeiro config disponível
+    // __dirname = clusters/cv → sobe 2 níveis até a raiz do repo antes de entrar em config/
     const configArg = process.argv.find(a => a.startsWith('--config='));
     const configName = configArg ? configArg.split('=')[1] : null;
+    const configDir = path.join(__dirname, '..', '..', 'config');
     if (configName) {
-      const p = path.join(__dirname, '..', 'config', `${configName}.json`);
+      const p = path.join(configDir, `${configName}.json`);
       if (fs.existsSync(p)) return p;
     }
     // Detecta automaticamente: pega o primeiro config da pasta (exceto template)
-    const configDir = path.join(__dirname, '..', 'config');
     try {
       const files = fs.readdirSync(configDir).filter(f => f.endsWith('.json') && f !== 'template.json');
       if (files.length > 0) return path.join(configDir, files[0]);
