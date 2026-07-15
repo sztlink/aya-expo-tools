@@ -24,6 +24,19 @@ test('PJLink rejects when the projector closes before returning a command respon
   );
 });
 
+test('PJLink power reconciliation is idempotent for already reached states', async () => {
+  const projector = new Projector({ id: 'test', ip: '127.0.0.1' });
+  let commands = 0;
+  projector.getPower = async () => 'on';
+  projector.powerOn = async () => { commands += 1; return { ok: true }; };
+  assert.deepEqual(await projector.ensurePowerOn(), { ok: true, noOp: true, power: 'on' });
+
+  projector.getPower = async () => 'cooling';
+  projector.powerOff = async () => { commands += 1; return { ok: true }; };
+  assert.deepEqual(await projector.ensurePowerOff(), { ok: true, noOp: true, power: 'cooling' });
+  assert.equal(commands, 0);
+});
+
 test('equipment lifecycle surfaces settled physical failures as degraded', async (t) => {
   t.mock.method(console, 'log', () => {});
   t.mock.method(console, 'error', () => {});

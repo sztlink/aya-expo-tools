@@ -199,6 +199,22 @@ class Projector {
     return r;
   }
 
+  async ensurePowerOn() {
+    const power = await this.getPower();
+    if (power === 'on' || power === 'warmup') {
+      return { ok: true, noOp: true, power };
+    }
+    return this.powerOn();
+  }
+
+  async ensurePowerOff() {
+    const power = await this.getPower();
+    if (power === 'off' || power === 'cooling') {
+      return { ok: true, noOp: true, power };
+    }
+    return this.powerOff();
+  }
+
   async getPower() {
     const r = await this.send(COMMANDS.POWER_QUERY);
     if (r.ok) this.state.power = POWER_STATES[r.value] || r.value;
@@ -321,11 +337,11 @@ class ProjectorManager {
   }
 
   async powerOnAll() {
-    return Promise.allSettled(this.all().map(p => p.powerOn()));
+    return Promise.allSettled(this.all().map(p => p.ensurePowerOn()));
   }
 
   async powerOffAll() {
-    return Promise.allSettled(this.all().map(p => p.powerOff()));
+    return Promise.allSettled(this.all().map(p => p.ensurePowerOff()));
   }
 
   reload(config) {
