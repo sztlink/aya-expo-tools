@@ -67,10 +67,8 @@ module.exports = {
     const registerRoutes = require('./routes');
     registerRoutes(app, this);
 
-    // Start polling
-    const pollInterval = config.pjlink?.pollInterval || 30000;
-    this.projectors.startPolling(pollInterval);
-
+    // Polling lifecycle is owned by core.startManagers(). Starting here would
+    // race the boot reconciliation power commands with duplicate PJLink polls.
     console.log(`  ✓ Equipment cluster loaded (${config.projectors?.length || 0} projectors, ${config.tvs?.length || 0} TVs)`);
   },
 
