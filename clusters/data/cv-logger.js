@@ -326,6 +326,13 @@ function scheduleMidnight() {
 // ── Public API ──────────────────────────────────────────────────────
 
 function start(cvManager, intervalMs = 60000) {
+  if (_timer || _midnightTimer) {
+    return { ok: true, noOp: true, message: 'CV Logger already running' };
+  }
+  if (!cvManager || typeof cvManager.getStatus !== 'function') {
+    return { ok: false, error: 'CVManager unavailable' };
+  }
+
   _cvManager = cvManager;
   _currentDate = today();
   ensureDirs();
@@ -337,9 +344,13 @@ function start(cvManager, intervalMs = 60000) {
   scheduleMidnight();
 
   console.log(`[CV Logger] Started — sampling every ${intervalMs / 1000}s → logs/cv/`);
+  return { ok: true, message: 'CV Logger started' };
 }
 
 function stop() {
+  const wasRunning = !!(_timer || _midnightTimer);
+  if (!wasRunning) return { ok: true, noOp: true, message: 'CV Logger already stopped' };
+
   if (_timer) { clearInterval(_timer); _timer = null; }
   if (_midnightTimer) { clearTimeout(_midnightTimer); _midnightTimer = null; }
 
@@ -347,8 +358,15 @@ function stop() {
   if (_currentDate) {
     consolidate(_currentDate);
   }
+  _currentDate = null;
+  _cvManager = null;
 
   console.log('[CV Logger] Stopped');
+  return { ok: true, message: 'CV Logger stopped' };
+}
+
+function isRunning() {
+  return !!(_timer || _midnightTimer);
 }
 
 /**
@@ -426,4 +444,4 @@ function listDays() {
   });
 }
 
-module.exports = { start, stop, sample, consolidate, getDailySummary, listDays };
+module.exports = { start, stop, isRunning, sample, consolidate, getDailySummary, listDays };

@@ -13,11 +13,13 @@ module.exports = {
   },
 
   async onOpen() {
-    if (this.cvManager) this.cvManager.start();
+    if (!this.cvManager) return { ok: true, skipped: true, message: 'CV unavailable' };
+    return this.cvManager.start();
   },
 
   async onClose() {
-    if (this.cvManager) this.cvManager.stop();
+    if (!this.cvManager) return { ok: true, skipped: true, message: 'CV unavailable' };
+    return this.cvManager.stop();
   },
 
   getStatus() {

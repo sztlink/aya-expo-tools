@@ -6,6 +6,18 @@ const path = require('path');
 const fs = require('fs');
 const runtimeLog = require('./runtime-log');
 
+function loadReleaseIdentity() {
+  try {
+    const releasePath = path.join(__dirname, '..', 'release.json');
+    if (!fs.existsSync(releasePath)) return null;
+    const manifest = JSON.parse(fs.readFileSync(releasePath, 'utf8'));
+    return manifest.releaseId || manifest.commit || null;
+  } catch {
+    return null;
+  }
+}
+const RUNTIME_RELEASE = loadReleaseIdentity();
+
 // ─── Log Functions ─────────────────────────────────────────
 const LOG_PATH = path.join(__dirname, '..', 'config', 'log.json');
 
@@ -149,6 +161,85 @@ function createApp(config) {
     next();
   });
 
+  // Local liveness is intentionally independent from Internet, Portal and hardware.
+  // The external watchdog uses HTTP responsiveness + heartbeat freshness.
+  app.get('/api/runtime/live', (_req, res) => {
+    const heartbeatPath = path.join(runtimeLog.LOG_DIR, 'heartbeat.json');
+    let heartbeatUpdatedAt = null;
+    let heartbeatAgeMs = null;
+    let heartbeat = null;
+    try {
+      const stat = fs.statSync(heartbeatPath);
+      heartbeatUpdatedAt = stat.mtime.toISOString();
+      heartbeatAgeMs = Math.max(0, Date.now() - stat.mtimeMs);
+      heartbeat = JSON.parse(fs.readFileSync(heartbeatPath, 'utf8'));
+    } catch { /* heartbeat starts after managers initialize */ }
+
+    const readinessErrors = [];
+    const operationalWarnings = [];
+    if (heartbeat?.pid !== process.pid) readinessErrors.push(`heartbeat-pid:${heartbeat?.pid || 'missing'}!=${process.pid}`);
+    if (heartbeatAgeMs == null) readinessErrors.push('heartbeat-missing');
+    else if (heartbeatAgeMs > 45000) readinessErrors.push(`heartbeat-stale:${Math.round(heartbeatAgeMs)}ms`);
+
+    let startupResult = null;
+    try {
+      const startupPath = path.join(runtimeLog.LOG_DIR, 'startup.json');
+      if (fs.existsSync(startupPath)) startupResult = JSON.parse(fs.readFileSync(startupPath, 'utf8'));
+    } catch { /* startup receipt is diagnostic only */ }
+    if (startupResult?.pid === process.pid && startupResult.ok === false) {
+      for (const error of startupResult.errors || []) {
+        operationalWarnings.push(`startup:${error.name || 'manager'}:${error.error || 'failed'}`);
+      }
+    }
+
+    const managerState = heartbeat?.managers || {};
+    const schedulerState = managerState.scheduler || null;
+    if (!schedulerState) {
+      readinessErrors.push('scheduler-missing');
+    } else if (schedulerState.transition) {
+      readinessErrors.push(`scheduler-transition:${schedulerState.transition.action}`);
+    } else if (schedulerState.state === 'unknown') {
+      readinessErrors.push('scheduler-unknown');
+    } else if (schedulerState.state !== schedulerState.desiredState) {
+      const degradedApplied = schedulerState.state === 'degraded'
+        && schedulerState.isOpen === (schedulerState.desiredState === 'open');
+      if (degradedApplied) operationalWarnings.push('scheduler-degraded');
+      else readinessErrors.push(`scheduler-state:${schedulerState.state}->${schedulerState.desiredState}`);
+    }
+
+    const desiredState = schedulerState?.desiredState;
+    const cvState = managerState.cv;
+    const timelapseState = managerState.timelapse;
+    if (desiredState === 'open') {
+      if (cvState?.enabled && !cvState.running) readinessErrors.push('cv-not-running');
+      else if (cvState?.enabled && !cvState.ready) readinessErrors.push('cv-not-ready');
+      if (timelapseState && !timelapseState.running) readinessErrors.push('timelapse-not-running');
+    } else if (desiredState === 'closed') {
+      if (cvState?.running) readinessErrors.push('cv-running-while-closed');
+      if (timelapseState?.running) readinessErrors.push('timelapse-running-while-closed');
+    }
+
+    const portalState = managerState.portalSync;
+    if (portalState?.enabled && !portalState.running) operationalWarnings.push('portal-sync-not-running');
+
+    res.json({
+      status: 'alive',
+      ready: readinessErrors.length === 0,
+      readinessErrors,
+      operationalWarnings,
+      pid: process.pid,
+      uptimeSec: Math.floor(process.uptime()),
+      heartbeatUpdatedAt,
+      heartbeatAgeMs,
+      scheduler: schedulerState ? {
+        state: schedulerState.state,
+        desiredState: schedulerState.desiredState,
+      } : null,
+      release: RUNTIME_RELEASE,
+      timestamp: new Date().toISOString(),
+    });
+  });
+
   // ─── Auth Middleware (Story 4-5) ──────────────────────────
   const AYA_TOKEN = process.env.AYA_TOKEN;
   
@@ -257,62 +348,135 @@ function logRuntimeError(type, errLike) {
 }
 
 // ─── Start Server ──────────────────────────────────────────
+async function startManagers(config, managers = {}) {
+  const results = [];
+  const errors = [];
+
+  const invoke = async (name, manager, method, ...args) => {
+    if (!manager || typeof manager[method] !== 'function') return null;
+    try {
+      const result = await manager[method](...args);
+      results.push({ name, method, result });
+      if (result && result.ok === false) {
+        errors.push({ name, method, error: result.error || result.message || `${name}.${method} returned ok:false` });
+      }
+      return result;
+    } catch (err) {
+      errors.push({ name, method, error: err.message });
+      console.error(`  ❌ ${name}.${method} failed: ${err.message}`);
+      return null;
+    }
+  };
+
+  // Always-on managers. These remain available during closed hours so local
+  // health, polling and the reduced Portal heartbeat continue to work.
+  await invoke('projectors', managers.projectors, 'startPolling', config?.pjlink?.pollInterval || 30000);
+  await invoke('cameras', managers.cameras, 'startPolling', 30000);
+  await invoke('data', managers.data, 'start'); // report cron only; CV logging is scheduled
+  await invoke('serverHealth', managers.serverHealth, 'start');
+  await invoke('portalSync', managers.portalSync, 'start');
+  await invoke('runtimeMonitor', managers.runtimeMonitor, 'start', managers);
+
+  // Scheduler is deliberately last. start() registers cron jobs and awaits one
+  // boot reconciliation, which is the sole owner of CV/logger/timelapse startup.
+  await invoke('scheduler', managers.scheduler, 'start');
+
+  return { ok: errors.length === 0, results, errors };
+}
+
 function start(config, { app, server }, managers = {}) {
   const PORT = config?.server?.port || 3000;
   const HOST = config?.server?.host || '0.0.0.0';
+  let resolveStartup;
+  let rejectStartup;
+  const startup = new Promise((resolve, reject) => {
+    resolveStartup = resolve;
+    rejectStartup = reject;
+  });
 
+  server.once('error', rejectStartup);
   server.listen(PORT, HOST, () => {
+    server.removeListener('error', rejectStartup);
     console.log(`  🌐 http://localhost:${PORT}`);
     console.log(`  🌐 http://${config?.exhibition?.network?.mediaServer || 'localhost'}:${PORT}\n`);
 
-    // Start managers if provided
-    if (managers.projectors) managers.projectors.startPolling(config.pjlink?.pollInterval || 30000);
-    if (managers.cameras) managers.cameras.startPolling(30000);
-    if (managers.scheduler) managers.scheduler.start();
-    if (managers.serverHealth) managers.serverHealth.start();
-    if (managers.portalSync) managers.portalSync.start();
-    if (managers.runtimeMonitor) managers.runtimeMonitor.start(managers);
-    if (managers.cvManager) {
-      managers.cvManager.start();
-      if (managers.cvLogger) managers.cvLogger.start(managers.cvManager);
-    }
-    if (managers.timelapse) managers.timelapse.start();
+    startManagers(config, managers).then(result => {
+      const startupResult = { ...result, pid: process.pid, completedAt: new Date().toISOString() };
+      runtimeLog.writeJson('startup.json', startupResult, { sync: true });
+      resolveStartup(startupResult);
+    }, rejectStartup);
   });
 
-  // Uncaught errors — log but don't crash
+  let shuttingDown = false;
+  const shutdown = async (exitCode = 0) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`\n  Shutting down (exit ${exitCode})...`);
+
+    const stopManager = async (name, manager, method) => {
+      if (!manager || typeof manager[method] !== 'function') return;
+      try { await manager[method](); }
+      catch (err) { console.error(`  ❌ ${name}.${method} failed during shutdown: ${err.message}`); }
+    };
+
+    const cleanup = async () => {
+      await stopManager('scheduler', managers.scheduler, 'stop');
+      await stopManager('projectors', managers.projectors, 'stopPolling');
+      await stopManager('cameras', managers.cameras, 'stopPolling');
+      await stopManager('portalSync', managers.portalSync, 'stop');
+      await stopManager('runtimeMonitor', managers.runtimeMonitor, 'stop');
+      await stopManager('timelapse', managers.timelapse, 'stop');
+      if (managers.data && typeof managers.data.stop === 'function') {
+        await stopManager('data', managers.data, 'stop');
+      } else {
+        await stopManager('cvLogger', managers.cvLogger, 'stop');
+      }
+      await stopManager('cvManager', managers.cvManager, 'stop');
+      await stopManager('serverHealth', managers.serverHealth, 'stop');
+
+      await new Promise(resolve => {
+        if (!server.listening) return resolve();
+        try { server.close(resolve); } catch { resolve(); }
+      });
+    };
+
+    let timedOut = false;
+    await Promise.race([
+      cleanup(),
+      new Promise(resolve => setTimeout(() => { timedOut = true; resolve(); }, 15000)),
+    ]);
+    if (timedOut) {
+      logRuntimeError('shutdownTimeout', new Error('Graceful shutdown exceeded 15 seconds'));
+      console.error('  ❌ Graceful shutdown timed out; forcing process exit');
+    }
+    process.exit(exitCode);
+  };
+
+  // Continuing after an uncaught error can leave equipment ownership ambiguous.
+  // Exit non-zero so Task Scheduler and the external watchdog can recover cleanly.
   process.on('uncaughtException', (err) => {
     logRuntimeError('uncaughtException', err);
     console.error(`  ❌ Uncaught exception: ${err.message}`);
     console.error(err.stack);
+    void shutdown(1);
   });
   process.on('unhandledRejection', (reason) => {
     logRuntimeError('unhandledRejection', reason);
     console.error(`  ❌ Unhandled rejection: ${reason}`);
+    void shutdown(1);
   });
 
-  const shutdown = () => {
-    console.log('\n  Shutting down...');
-    if (managers.projectors) managers.projectors.stopPolling();
-    if (managers.cameras) managers.cameras.stopPolling();
-    if (managers.scheduler) managers.scheduler.stop();
-    if (managers.portalSync) managers.portalSync.stop();
-    if (managers.runtimeMonitor) managers.runtimeMonitor.stop();
-    if (managers.cvLogger) managers.cvLogger.stop();
-    if (managers.cvManager) managers.cvManager.stop();
-    if (managers.serverHealth) managers.serverHealth.stop();
-    if (managers.timelapse) managers.timelapse.stop();
-    server.close();
-    process.exit(0);
-  };
-
   // Graceful shutdown
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', () => { void shutdown(0); });
+  process.on('SIGTERM', () => { void shutdown(0); });
+
+  return { server, startup, shutdown };
 }
 
 module.exports = {
   createApp,
   start,
+  startManagers,
   session,
   addLogEntry,
   readLog,

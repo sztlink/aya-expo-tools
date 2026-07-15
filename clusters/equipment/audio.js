@@ -50,8 +50,9 @@ function getVolume() {
 function setVolume(level) {
   const clamped = Math.max(0, Math.min(100, Math.round(level)))
   const result = runVolumeScript('set', clamped)
-  if (result !== null) _cachedVolume = clamped
-  return _cachedVolume ?? clamped
+  if (result === null) throw new Error(`Unable to set Windows master volume to ${clamped}%`)
+  _cachedVolume = result
+  return result
 }
 
 module.exports = { getVolume, setVolume }

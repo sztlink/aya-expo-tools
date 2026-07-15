@@ -221,18 +221,13 @@ echo   [7/8] Configurando inicializacao automatica...
 echo.
 
 set NODE_EXE=%INSTALL_DIR%\node-portable\node.exe
-set INDEX_JS=%INSTALL_DIR%\index.js
+set LAUNCHER=%INSTALL_DIR%\scripts\start-observed.cmd
 
-:: Detectar qual config usar (amano-rio.json se existir, senao first available)
-set CONFIG_FILE=amano-rio
+:: Nunca autodetectar JSON arbitrario (log.json/state nao sao configs).
+set CONFIG_FILE=template-amano-rio
 if not exist "%INSTALL_DIR%\config\%CONFIG_FILE%.json" (
-  echo         [!] AVISO: config/amano-rio.json nao encontrado.
-  echo             Use o primeiro config disponivel ou crie manualmente.
-  for %%f in ("%INSTALL_DIR%\config\*.json") do (
-    set CONFIG_FILE=%%~nf
-    goto :config_found
-  )
-  :config_found
+  echo         [!] ERRO: config/%CONFIG_FILE%.json nao encontrado.
+  exit /b 1
 )
 
 echo         Usando config: %CONFIG_FILE%.json
@@ -241,11 +236,11 @@ echo.
 schtasks /query /tn "AYA Expo Tools" >nul 2>&1
 if %errorLevel% neq 0 (
   echo         Criando tarefa no Task Scheduler...
-  schtasks /create /tn "AYA Expo Tools" /tr "\"%NODE_EXE%\" \"%INDEX_JS%\" --config=%CONFIG_FILE%" /sc onstart /ru SYSTEM /rl HIGHEST /f >nul
+  schtasks /create /tn "AYA Expo Tools" /tr "\"%LAUNCHER%\" %CONFIG_FILE%" /sc onstart /ru SYSTEM /rl HIGHEST /f >nul
   echo         Task Scheduler configurado. Inicia automaticamente no boot.
 ) else (
   echo         Atualizando tarefa existente...
-  schtasks /change /tn "AYA Expo Tools" /tr "\"%NODE_EXE%\" \"%INDEX_JS%\" --config=%CONFIG_FILE%" >nul
+  schtasks /change /tn "AYA Expo Tools" /tr "\"%LAUNCHER%\" %CONFIG_FILE%" >nul
   echo         Task Scheduler atualizado.
 )
 echo.
@@ -261,7 +256,7 @@ echo.
 start "" http://localhost:3000
 
 cd /d "%INSTALL_DIR%"
-start "AYA Expo Tools Server" "%NODE_EXE%" "%INDEX_JS%" --config=%CONFIG_FILE%
+start "AYA Expo Tools Server" "%LAUNCHER%" %CONFIG_FILE%
 
 timeout /t 5 /nobreak >nul
 

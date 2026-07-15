@@ -24,6 +24,10 @@ function summarizeManagers() {
     summary.scheduler = {
       enabled: !!_managers.scheduler.enabled,
       isOpen: status.isOpen,
+      state: status.state || status.actualState || null,
+      desiredState: status.desiredState || null,
+      transition: status.transition || null,
+      errors: status.errors || [],
       today: status.today,
       todaySchedule: status.todaySchedule || null,
       lastAction: status.lastAction || null,
@@ -48,6 +52,8 @@ function summarizeManagers() {
     summary.cv = {
       enabled: cv.enabled,
       running: cv.running,
+      ready: cv.ready,
+      cardinality: cv.cardinality || null,
       cameras: cv.cameras,
       totalCount: cv.totalCount,
       countStrategy: cv.countStrategy,

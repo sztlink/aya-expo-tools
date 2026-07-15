@@ -9,17 +9,34 @@ module.exports = {
 
   register(app, config, clusters) {
     this.cameras = new CameraManager(config);
-    this.timelapse = new TimelapseCapture(this.cameras);
+    this.timelapse = new TimelapseCapture(this.cameras, {
+      timezone: config.schedule?.timezone || 'America/Sao_Paulo',
+    });
+    this._timelapseActive = false;
     this.config = config;
     require('./routes')(app, this);
   },
 
   async onOpen() {
-    // Timelapse start handled by scheduler
+    if (!this.timelapse) return { ok: true, skipped: true, message: 'Timelapse unavailable' };
+    const running = this._timelapseActive || this.timelapse.getStats?.().running;
+    if (running) return { ok: true, noOp: true, message: 'Timelapse already running' };
+
+    const result = await this.timelapse.start();
+    if (result && result.ok === false) return result;
+    this._timelapseActive = true;
+    return { ok: true, message: 'Timelapse started' };
   },
 
   async onClose() {
-    // Timelapse stop
+    if (!this.timelapse) return { ok: true, skipped: true, message: 'Timelapse unavailable' };
+    const running = this._timelapseActive || this.timelapse.getStats?.().running;
+    if (!running) return { ok: true, noOp: true, message: 'Timelapse already stopped' };
+
+    const result = await this.timelapse.stop();
+    if (result && result.ok === false) return result;
+    this._timelapseActive = false;
+    return { ok: true, message: 'Timelapse stopped' };
   },
 
   getStatus() {
@@ -27,7 +44,8 @@ module.exports = {
       name: this.name,
       healthy: true,
       details: {
-        cameras: this.cameras ? this.cameras.getAllStatus() : null
+        cameras: this.cameras ? this.cameras.getAllStatus() : null,
+        timelapse: this.timelapse?.getStats ? this.timelapse.getStats() : null
       }
     };
   }

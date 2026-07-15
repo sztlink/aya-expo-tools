@@ -25,11 +25,14 @@ module.exports = {
   },
 
   async onOpen() {
-    if (this.portalSync) this.portalSync.start();
+    if (!this.portalSync) return { ok: true, skipped: true, message: 'Portal Sync disabled' };
+    return this.portalSync.start();
   },
 
   async onClose() {
-    if (this.portalSync) this.portalSync.stop();
+    // Portal Sync is always-on. Its internal schedule-aware interval reduces the
+    // heartbeat rate outside opening hours, but it must never stop on close.
+    return { ok: true, noOp: true, message: 'Portal Sync remains active off-hours' };
   },
 
   getStatus() {
@@ -37,7 +40,8 @@ module.exports = {
       name: this.name,
       healthy: true,
       details: {
-        portalSync: this.portalSync ? 'active' : 'disabled'
+        portalSync: this.portalSync ? 'active' : 'disabled',
+        portalSyncStatus: this.portalSync ? this.portalSync.getStatus() : null
       }
     };
   }

@@ -1,7 +1,7 @@
 @echo off
 setlocal ENABLEDELAYEDEXPANSION
 
-set "ROOT=%~dp0.."
+for %%I in ("%~dp0..") do set "ROOT=%%~fI"
 cd /d "%ROOT%"
 
 if not exist "logs" mkdir "logs"
@@ -12,15 +12,9 @@ if not exist "%NODE_EXE%" set "NODE_EXE=%ROOT%\node-portable\node.exe"
 if not exist "%NODE_EXE%" set "NODE_EXE=node"
 
 set "CONFIG_NAME=%~1"
-if not defined CONFIG_NAME (
-  for %%f in ("%ROOT%\config\*.json") do (
-    if /I not "%%~nf"=="template" if /I not "%%~nf"=="tuya-cloud" if not defined CONFIG_NAME set "CONFIG_NAME=%%~nf"
-  )
-)
+REM Never autodetect arbitrary JSON: config\log.json and state files are not configs.
 if not defined CONFIG_NAME set "CONFIG_NAME=template-amano-rio"
 
-echo [%date% %time%] start config=%CONFIG_NAME% >> "logs\launcher.log"
-"%NODE_EXE%" --report-uncaught-exception --report-on-fatalerror --report-directory="%ROOT%\logs\reports" "%ROOT%\index.js" --config=%CONFIG_NAME% 1>>"%ROOT%\logs\stdout.log" 2>>"%ROOT%\logs\stderr.log"
-set "EXIT_CODE=%ERRORLEVEL%"
-echo [%date% %time%] exit code=%EXIT_CODE% >> "logs\launcher.log"
-exit /b %EXIT_CODE%
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\cleanup-orphan-cv.ps1" -Root "%ROOT%"
+"%NODE_EXE%" "%ROOT%\scripts\runtime-launcher.js" --config=%CONFIG_NAME%
+exit /b %ERRORLEVEL%

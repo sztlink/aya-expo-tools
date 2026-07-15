@@ -76,90 +76,109 @@ module.exports = {
 
   async onOpen() {
     console.log('  🟢 Equipment: Opening...');
-    
+    const errors = [];
+
     try {
-      // Power on all projectors
-      await this.projectors.powerOnAll();
-      console.log('  ✓ Projectors powered on');
+      const projectorResults = await this.projectors.powerOnAll();
+      projectorResults.forEach((result, index) => {
+        if (result.status === 'rejected' || result.value?.ok === false) {
+          const id = this.config.projectors?.[index]?.id || `projector-${index + 1}`;
+          errors.push({ component: id, error: result.reason?.message || result.value?.error || 'power-on failed' });
+        }
+      });
+      console.log(`  ✓ Projector power-on sent (${projectorResults.length - errors.length}/${projectorResults.length})`);
 
-      // Power on smart plugs if configured
       const plugs = this.config.smartplugs || [];
-      if (plugs.length > 0 && this.tuya.isConfigured()) {
-        await this.tuya.allOn(plugs);
-        console.log(`  ✓ ${plugs.length} smart plugs powered on`);
+      if (plugs.length > 0) {
+        if (!this.tuya.isConfigured()) {
+          errors.push({ component: 'smartplugs', error: 'Tuya credentials unavailable' });
+        } else {
+          const plugResults = await this.tuya.allOn(plugs);
+          errors.push(...plugResults.filter(result => !result.ok).map(result => ({ component: result.id, error: result.error || 'power-on failed' })));
+        }
       }
 
-      // Power on TVs via WOL
       const tvs = this.config.tvs || [];
-      if (tvs.length > 0) {
-        await Promise.allSettled(tvs.map(t => this.tv.powerOn(t)));
-        console.log(`  ✓ ${tvs.length} TVs wake-on-LAN sent`);
-      }
+      const tvResults = await Promise.allSettled(tvs.map(t => this.tv.powerOn(t)));
+      tvResults.forEach((result, index) => {
+        if (result.status === 'rejected' || result.value?.ok === false) {
+          errors.push({ component: tvs[index]?.id || `tv-${index + 1}`, error: result.reason?.message || result.value?.error || 'power-on failed' });
+        }
+      });
 
-      // Restore Windows master volume if configured
       try {
         const targetVolume = Number(this.config.audio?.volume);
         const openVolume = Number.isFinite(targetVolume) ? targetVolume : 70;
         const result = this.audio.setVolume(openVolume);
         console.log(`  ✓ Audio volume restored to ${result}%`);
       } catch (err) {
-        console.error('  ⚠️ Audio restore failed:', err.message);
+        errors.push({ component: 'audio', error: err.message });
       }
 
-      // Wait for equipment to warm up, then poll
       setTimeout(() => {
-        this.projectors.pollAll().then(s => this.broadcast('projectors', s));
+        this.projectors.pollAll().then(s => this.broadcast('projectors', s)).catch(() => {});
       }, 5000);
 
-      return { ok: true, message: 'Equipment opened' };
+      return errors.length === 0
+        ? { ok: true, message: 'Equipment opened' }
+        : { ok: false, error: `${errors.length} equipment open action(s) failed`, errors };
     } catch (err) {
       console.error('  ❌ Equipment onOpen error:', err.message);
-      return { ok: false, error: err.message };
+      return { ok: false, error: err.message, errors: [...errors, { component: 'equipment', error: err.message }] };
     }
   },
 
   async onClose() {
     console.log('  🔴 Equipment: Closing...');
-    
+    const errors = [];
+
     try {
-      // Mute Windows master volume first to guarantee silence on close
       try {
         const result = this.audio.setVolume(0);
         console.log(`  ✓ Audio volume set to ${result}%`);
       } catch (err) {
-        console.error('  ⚠️ Audio mute failed:', err.message);
+        errors.push({ component: 'audio', error: err.message });
       }
 
-      // Stop all TV loops
       const tvs = this.config.tvs || [];
       for (const t of tvs) {
-        this.tv.stopLoop(t);
+        try { this.tv.stopLoop(t); } catch (err) { errors.push({ component: t.id, error: err.message }); }
       }
+      const tvResults = await Promise.allSettled(tvs.map(t => this.tv.castStop(t)));
+      tvResults.forEach((result, index) => {
+        if (result.status === 'rejected' || result.value?.ok === false) {
+          errors.push({ component: tvs[index]?.id || `tv-${index + 1}`, error: result.reason?.message || result.value?.error || 'cast stop failed' });
+        }
+      });
 
-      // Stop casting on all TVs
-      await Promise.allSettled(tvs.map(t => this.tv.castStop(t)));
-      console.log(`  ✓ ${tvs.length} TVs stopped`);
+      const projectorResults = await this.projectors.powerOffAll();
+      projectorResults.forEach((result, index) => {
+        if (result.status === 'rejected' || result.value?.ok === false) {
+          const id = this.config.projectors?.[index]?.id || `projector-${index + 1}`;
+          errors.push({ component: id, error: result.reason?.message || result.value?.error || 'power-off failed' });
+        }
+      });
 
-      // Power off all projectors
-      await this.projectors.powerOffAll();
-      console.log('  ✓ Projectors powered off');
-
-      // Power off smart plugs if configured
       const plugs = this.config.smartplugs || [];
-      if (plugs.length > 0 && this.tuya.isConfigured()) {
-        await this.tuya.allOff(plugs);
-        console.log(`  ✓ ${plugs.length} smart plugs powered off`);
+      if (plugs.length > 0) {
+        if (!this.tuya.isConfigured()) {
+          errors.push({ component: 'smartplugs', error: 'Tuya credentials unavailable' });
+        } else {
+          const plugResults = await this.tuya.allOff(plugs);
+          errors.push(...plugResults.filter(result => !result.ok).map(result => ({ component: result.id, error: result.error || 'power-off failed' })));
+        }
       }
 
-      // Poll projectors after shutdown
       setTimeout(() => {
-        this.projectors.pollAll().then(s => this.broadcast('projectors', s));
+        this.projectors.pollAll().then(s => this.broadcast('projectors', s)).catch(() => {});
       }, 5000);
 
-      return { ok: true, message: 'Equipment closed' };
+      return errors.length === 0
+        ? { ok: true, message: 'Equipment closed' }
+        : { ok: false, error: `${errors.length} equipment close action(s) failed`, errors };
     } catch (err) {
       console.error('  ❌ Equipment onClose error:', err.message);
-      return { ok: false, error: err.message };
+      return { ok: false, error: err.message, errors: [...errors, { component: 'equipment', error: err.message }] };
     }
   },
 

@@ -72,6 +72,7 @@ class PortalSync {
     // Estado interno
     this._running = false
     this._timer = null
+    this._generation = 0
     this._camRotation = 0
     this._status = {
       startedAt: null,
@@ -96,7 +97,7 @@ class PortalSync {
     this._failureWindow = [] // timestamps de falhas recentes
     this._circuitOpen = false
     this._circuitOpenUntil = 0
-    this._circuitMaxFailures = 10       // falhas no janelamento
+    this._circuitMaxFailures = 6        // alcançável dentro da janela mesmo com backoff
     this._circuitWindowMs = 5 * 60_000 // 5 minutos
     this._circuitPauseMs = 30 * 60_000 // pausa de 30 minutos
   }
@@ -106,26 +107,38 @@ class PortalSync {
   start() {
     if (!this.enabled) {
       console.log('  ⚡ Portal sync: desativado (sem portalSync.url no config)')
-      return
+      return { ok: true, skipped: true, message: 'Portal Sync disabled' }
     }
     if (!this.apiKey) {
       console.log('  ⚡ Portal sync: sem API key (PORTAL_BOT_API_KEY ou portalSync.apiKey)')
-      return
+      return { ok: true, skipped: true, message: 'Portal Sync missing API key' }
     }
+    if (this._running) {
+      return { ok: true, noOp: true, message: 'Portal Sync already running' }
+    }
+
     console.log(`  ⚡ Portal sync: → ${this.portalUrl} (a cada ${this.interval / 1000}s)`)
+    this._generation++
     this._running = true
     this._status.startedAt = new Date().toISOString()
     this._status.running = true
-    this._push() // push imediato no início
+    this._push(this._generation) // push imediato no início
+    return { ok: true, message: 'Portal Sync started' }
   }
 
   stop() {
+    if (!this._running && !this._timer) {
+      return { ok: true, noOp: true, message: 'Portal Sync already stopped' }
+    }
+
+    this._generation++
     this._running = false
     this._status.running = false
     if (this._timer) {
       clearTimeout(this._timer)
       this._timer = null
     }
+    return { ok: true, message: 'Portal Sync stopped' }
   }
 
   // ─── Circuit Breaker ──────────────────────────────────────
@@ -404,8 +417,16 @@ class PortalSync {
 
   _getCurrentInterval() {
     try {
+      // Prefer the lifecycle owner's timezone-aware calculation so Portal
+      // heartbeat cadence cannot drift from boot/cron reconciliation.
       const schedule = this.config.schedule
-      if (!schedule || !schedule.enabled) return this.interval // sem schedule = sempre ativo
+      if (this.scheduler?.getDesiredState && schedule?.days && schedule.enabled !== false) {
+        return this.scheduler.getDesiredState(new Date()) === 'open'
+          ? this.interval
+          : this.offHoursInterval
+      }
+
+      if (!schedule || schedule.enabled === false || !schedule.days) return this.interval // sem schedule = sempre ativo
 
       const tz = schedule.timezone || 'America/Sao_Paulo'
       const now = new Date()
@@ -440,8 +461,8 @@ class PortalSync {
     }
   }
 
-  async _push() {
-    if (!this._running) return
+  async _push(generation = this._generation) {
+    if (!this._running || generation !== this._generation) return
 
     const startedAt = Date.now()
     this._status.lastPushStartedAt = new Date(startedAt).toISOString()
@@ -451,7 +472,7 @@ class PortalSync {
     if (this._isCircuitOpen()) {
       const waitMs = Math.max(this._circuitOpenUntil - Date.now(), 1_000)
       this._status.nextIntervalMs = waitMs
-      this._timer = setTimeout(() => this._push(), waitMs)
+      this._timer = setTimeout(() => this._push(generation), waitMs)
       return
     }
 
@@ -460,32 +481,35 @@ class PortalSync {
 
     try {
       const payload = await this._buildPayload()
+      if (!this._running || generation !== this._generation) return
       await this._httpPost(pushUrl, payload, this.apiKey)
+      if (!this._running || generation !== this._generation) return
       this._status.lastPushOkAt = new Date().toISOString()
       this._status.lastPushDurationMs = Date.now() - startedAt
       this._recordSuccess()
 
-      if (this._running) {
+      if (this._running && generation === this._generation) {
         const nextInterval = this._getCurrentInterval()
         this._status.nextIntervalMs = nextInterval
-        this._timer = setTimeout(() => this._push(), nextInterval)
+        this._timer = setTimeout(() => this._push(generation), nextInterval)
       }
     } catch (err) {
+      if (!this._running || generation !== this._generation) return
       this._status.lastPushErrorAt = new Date().toISOString()
       this._status.lastPushErrorMessage = err.message
       this._status.lastPushDurationMs = Date.now() - startedAt
       console.error(`  ⚡ Portal sync: falha — ${err.message}`)
       this._recordFailure()
 
-      if (!this._running) return
+      if (!this._running || generation !== this._generation) return
 
       if (this._circuitOpen) {
         const waitMs = Math.max(this._circuitOpenUntil - Date.now(), 1_000)
         this._status.nextIntervalMs = waitMs
-        this._timer = setTimeout(() => this._push(), waitMs)
+        this._timer = setTimeout(() => this._push(generation), waitMs)
       } else {
         this._status.nextIntervalMs = this._retryDelay
-        this._timer = setTimeout(() => this._push(), this._retryDelay)
+        this._timer = setTimeout(() => this._push(generation), this._retryDelay)
       }
     }
   }

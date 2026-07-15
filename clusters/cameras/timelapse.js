@@ -28,7 +28,9 @@ class TimelapseCapture {
   constructor(cameras, opts = {}) {
     this.cameras = cameras
     this.interval = opts.interval || DEFAULT_INTERVAL
+    this.timezone = opts.timezone || 'America/Sao_Paulo'
     this._timer = null
+    this._initialTimer = null
     this._capturing = false
     this._stats = {
       started: null,
@@ -54,13 +56,20 @@ class TimelapseCapture {
     console.log(`  📸 Timelapse capture started (every ${this.interval / 1000}s)`)
 
     // First capture after 10s (let cameras initialize)
-    setTimeout(() => this._capture(), 10_000)
+    this._initialTimer = setTimeout(() => {
+      this._initialTimer = null
+      if (this._timer) this._capture()
+    }, 10_000)
     this._timer = setInterval(() => this._capture(), this.interval)
   }
 
   stop() {
     this._stats.running = false
     this._stats.capturing = false
+    if (this._initialTimer) {
+      clearTimeout(this._initialTimer)
+      this._initialTimer = null
+    }
     if (this._timer) {
       clearInterval(this._timer)
       this._timer = null
@@ -76,8 +85,15 @@ class TimelapseCapture {
     this._stats.lastAttempt = now.toISOString()
 
     try {
-      const dateStr = now.toISOString().slice(0, 10)  // YYYY-MM-DD
-      const timeStr = now.toTimeString().slice(0, 8).replace(/:/g, '')  // HHMMSS
+      const parts = Object.fromEntries(
+        new Intl.DateTimeFormat('en-CA', {
+          timeZone: this.timezone,
+          year: 'numeric', month: '2-digit', day: '2-digit',
+          hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+        }).formatToParts(now).filter(part => part.type !== 'literal').map(part => [part.type, part.value])
+      )
+      const dateStr = `${parts.year}-${parts.month}-${parts.day}`
+      const timeStr = `${parts.hour}${parts.minute}${parts.second}`
 
       const allCams = this.cameras.getAllStatus()
 

@@ -56,10 +56,25 @@ function sendCommand(ip, command, password = '', port = PJLINK_PORT) {
     let buffer = '';
     let authenticated = false;
     let timer;
+    let settled = false;
+
+    const finishResolve = value => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      socket.destroy();
+      resolve(value);
+    };
+    const finishReject = err => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      socket.destroy();
+      reject(err);
+    };
 
     timer = setTimeout(() => {
-      socket.destroy();
-      reject(new Error(`Timeout connecting to ${ip}:${port}`));
+      finishReject(new Error(`Timeout connecting to ${ip}:${port}`));
     }, TIMEOUT);
 
     socket.connect(port, ip, () => {
@@ -91,29 +106,24 @@ function sendCommand(ip, command, password = '', port = PJLINK_PORT) {
           buffer = '';
           socket.write(hash + command);
         } else if (greeting.includes('PJLINK ERRA')) {
-          clearTimeout(timer);
-          socket.destroy();
-          reject(new Error('Authentication error'));
+          finishReject(new Error('Authentication error'));
           return;
         }
       } else {
         // Response to our command
         if (buffer.includes('\r')) {
-          clearTimeout(timer);
           const response = buffer.trim();
-          socket.destroy();
-          resolve(parseResponse(response));
+          finishResolve(parseResponse(response));
         }
       }
     });
 
     socket.on('error', (err) => {
-      clearTimeout(timer);
-      reject(new Error(`Connection error ${ip}: ${err.message}`));
+      finishReject(new Error(`Connection error ${ip}: ${err.message}`));
     });
 
     socket.on('close', () => {
-      clearTimeout(timer);
+      if (!settled) finishReject(new Error(`Connection closed before PJLink response from ${ip}:${port}`));
     });
   });
 }

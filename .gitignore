@@ -15,5 +15,14 @@ config/*.json
 !config/template.json
 !config/template-amano-rio.json
 installer/output/
-src-tauri/target/
+dist/
+release.json
+state/
+logs/runtime/
+logs/heartbeat.json
+clusters/cv/python/output/
+clusters/cv/python/venv/
+clusters/cv/python/__pycache__/
+clusters/cv/python/*.pt
+clusters/cv/python/models/
 src-tauri/target/

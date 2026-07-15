@@ -71,6 +71,11 @@ if (setupMode) {
     addLogEntry: core.addLogEntry,
     broadcast: core.broadcast
   });
+  // Route handlers resolve these references at request time.
+  if (clusters.cv) {
+    clusters.cv.scheduler = scheduler;
+    clusters.cv.data = clusters.data || null;
+  }
 
   // ── Core routes ──────────────────────────────────────────
   require('./core/routes/session')(app, {
@@ -117,15 +122,24 @@ if (setupMode) {
   require('./core/routes/archive')(app, config);
 
   // ── Start ────────────────────────────────────────────────
-  core.start(config, { app, server }, {
+  const runtime = core.start(config, { app, server }, {
     projectors: clusters.equipment?.projectors || null,
     cameras: clusters.cameras?.cameras || null,
     scheduler,
     portalSync: clusters.communication?.portalSync || null,
+    data: clusters.data || null,
     cvManager: clusters.cv?.cvManager || null,
     cvLogger: clusters.data?.cvLogger || null,
     serverHealth,
     timelapse: clusters.cameras?.timelapse || null,
     runtimeMonitor,
+  });
+  runtime.startup.then(result => {
+    if (result.ok === false) {
+      console.error(`  ⚠ Runtime started with manager warnings: ${JSON.stringify(result.errors)}`);
+    }
+  }).catch(err => {
+    console.error(`  ❌ Runtime startup failed: ${err.message}`);
+    void runtime.shutdown(1);
   });
 }

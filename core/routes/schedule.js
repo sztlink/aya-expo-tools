@@ -13,21 +13,37 @@ module.exports = function(app, { scheduler }) {
     res.json({ ok: true, data: scheduler.getStatus() });
   });
 
-  app.post('/api/schedule/open', async (req, res) => {
-    try {
-      await scheduler.executeOpen(getAuditContext(req, 'schedule-open'));
-      res.json({ ok: true, data: { message: 'Exhibition opened' } });
-    } catch (err) {
-      res.status(500).json({ ok: false, error: err.message, code: 'OPEN_FAILED' });
-    }
-  });
+  const runTransition = async (req, res, action) => {
+    const opening = action === 'open';
+    const message = opening ? 'Exhibition opened' : 'Exhibition closed';
+    const code = opening ? 'OPEN_FAILED' : 'CLOSE_FAILED';
 
-  app.post('/api/schedule/close', async (req, res) => {
     try {
-      await scheduler.executeClose(getAuditContext(req, 'schedule-close'));
-      res.json({ ok: true, data: { message: 'Exhibition closed' } });
+      const result = opening
+        ? await scheduler.executeOpen(getAuditContext(req, 'schedule-open'))
+        : await scheduler.executeClose(getAuditContext(req, 'schedule-close'));
+      const status = scheduler.getStatus();
+      const data = { message, result, status };
+
+      // Backward-compatible success envelope, now with transition detail. A
+      // resolved cluster result with ok:false is still an HTTP failure.
+      if (result && result.ok === false) {
+        const error = result.errors?.map(item => item.message).filter(Boolean).join('; ')
+          || `${opening ? 'Open' : 'Close'} transition degraded`;
+        return res.status(500).json({ ok: false, error, code, data });
+      }
+
+      return res.json({ ok: true, data });
     } catch (err) {
-      res.status(500).json({ ok: false, error: err.message, code: 'CLOSE_FAILED' });
+      return res.status(500).json({
+        ok: false,
+        error: err.message,
+        code,
+        data: { status: scheduler.getStatus() },
+      });
     }
-  });
+  };
+
+  app.post('/api/schedule/open', (req, res) => runTransition(req, res, 'open'));
+  app.post('/api/schedule/close', (req, res) => runTransition(req, res, 'close'));
 };

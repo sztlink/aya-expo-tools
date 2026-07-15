@@ -32,7 +32,7 @@ const CV_DIR = path.join(__dirname, 'python');
 const OUTPUT_DIR = path.join(CV_DIR, 'output');
 
 class CVManager extends EventEmitter {
-  constructor(config) {
+  constructor(config, opts = {}) {
     super();
     // EventEmitter: sem listener para 'error' → uncaught exception. Handler padrão.
     this.on('error', (err) => {
@@ -51,121 +51,284 @@ class CVManager extends EventEmitter {
     this._reidBuffers = new Map(); // camId → string (linha parcial ReID)
     this._cache = new Map();      // camId → último evento 'detection' recebido
     this._reidCache = new Map();   // camId → último evento ReID
-    this._readyInfo = new Map();  // camId → evento 'ready' (model, format, gpuName)
+    this._readyInfo = new Map();  // camId → detector ready event
+    this._reidReady = new Set();  // camId → ReID ready event observed
     this._configPath = null;      // definido no start()
+
+    // Lifecycle generation prevents stale exit/restart callbacks from a previous
+    // stop() from mutating or recreating the current process set.
+    this._active = false;
+    this._generation = 0;
+    this._restartTimers = new Map(); // unit key → timeout
+    this._stoppingPromise = null;
+    this._pendingStartPromise = null;
+    this._spawn = opts.spawn || spawn;
+    this._setTimeout = opts.setTimeout || setTimeout;
+    this._clearTimeout = opts.clearTimeout || clearTimeout;
+    this._platform = opts.platform || process.platform;
+    this._treeKill = opts.treeKill || ((pid) => {
+      if (this._platform !== 'win32') return;
+      const { execSync } = require('child_process');
+      execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore', timeout: 5000 });
+    });
   }
 
   // ─── Public API ────────────────────────────────────────────────────────────
 
   start() {
-    this.enabled = this.cvConfig?.enabled !== false;
-    if (!this.enabled) {
+    if (this._stoppingPromise) {
+      if (!this._pendingStartPromise) {
+        this._pendingStartPromise = this._stoppingPromise.then(() => {
+          this._pendingStartPromise = null;
+          return this.start();
+        });
+      }
+      return this._pendingStartPromise;
+    }
+
+    const configured = this.cvConfig?.enabled !== false;
+    this.enabled = configured;
+    if (!configured) {
       console.log('  👁️ CV: desativado (cv.enabled = false no config)');
-      return;
+      return { ok: true, skipped: true, message: 'CV disabled' };
+    }
+
+    if (!this._active) {
+      this._active = true;
+      this._generation++;
+      this._cancelRestartTimers();
+    }
+    const generation = this._generation;
+    const cvCameras = [...new Set(
+      (this.cvConfig.cameras || [this.cvConfig.camera || 'cam-1']).filter(Boolean)
+    )];
+    const reidEnabled = !!this.cvConfig.reid?.enabled;
+    const counterCfg = this.cvConfig.counter;
+
+    const missingDetectors = cvCameras.filter(camId => !this.processes.has(camId));
+    const missingReid = reidEnabled
+      ? cvCameras.filter(camId => !this.reidProcesses.has(camId))
+      : [];
+    const missingCounters = [];
+    if (counterCfg?.enabled) {
+      if (counterCfg.mode === 'dual') {
+        if (!this.counterProcesses.has('entry')) missingCounters.push('entry');
+        if (!this.counterProcesses.has('exit')) missingCounters.push('exit');
+      } else if (!this.counterProcess) {
+        missingCounters.push('single');
+      }
+    }
+
+    // Fully populated generation: avoid even the Python discovery subprocess.
+    if (missingDetectors.length === 0 && missingReid.length === 0 && missingCounters.length === 0) {
+      return {
+        ok: true,
+        noOp: true,
+        message: 'CV already running',
+        generation,
+        detectors: this.processes.size,
+        reid: this.reidProcesses.size,
+        counters: this.counterProcesses.size + (this.counterProcess ? 1 : 0),
+      };
     }
 
     const pythonCmd = this._findPython();
     if (!pythonCmd) {
       console.log('  👁️ CV: Python não encontrado — execute install.bat');
-      return;
+      return { ok: false, error: 'Python not found', generation };
     }
 
-    const cvCameras = this.cvConfig.cameras || [this.cvConfig.camera || 'cam-1'];
     this._configPath = this._getConfigPath();
-
-    if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-
-    console.log(`  👁️ CV v2: iniciando ${cvCameras.length} detector(es) | JSONL protocol`);
-
-    for (const camId of cvCameras) {
-      this._startDetector(camId, pythonCmd, this._configPath);
+    try {
+      if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+    } catch (err) {
+      return { ok: false, error: `CV output directory unavailable: ${err.message}`, generation };
     }
 
-    // ReID processes (one per camera)
-    const reidConfig = this.cvConfig.reid || {};
-    if (reidConfig.enabled) {
-      console.log(`  🔍 ReID: iniciando ${cvCameras.length} processo(s)`);
-      for (const camId of cvCameras) {
-        this._startReid(camId, pythonCmd, this._configPath);
+    const startErrors = [];
+    const attempt = (unit, fn) => {
+      try { fn(); } catch (err) { startErrors.push({ unit, message: err.message }); }
+    };
+
+    if (missingDetectors.length > 0) {
+      console.log(`  👁️ CV v2: iniciando ${missingDetectors.length} detector(es) | JSONL protocol`);
+      for (const camId of missingDetectors) {
+        attempt(`detector:${camId}`, () => this._startDetector(camId, pythonCmd, this._configPath, generation));
       }
     }
 
-    // Visitor counter
-    const counterCfg = this.cvConfig.counter;
+    if (missingReid.length > 0) {
+      console.log(`  🔍 ReID: iniciando ${missingReid.length} processo(s)`);
+      for (const camId of missingReid) {
+        attempt(`reid:${camId}`, () => this._startReid(camId, pythonCmd, this._configPath, generation));
+      }
+    }
+
     if (counterCfg?.enabled) {
       if (counterCfg.mode === 'dual') {
-        this._startCounterInstance(pythonCmd, this._configPath, counterCfg.entry || {}, 'entry');
-        this._startCounterInstance(pythonCmd, this._configPath, counterCfg.exit  || {}, 'exit');
-      } else {
-        this._startCounter(pythonCmd, this._configPath, counterCfg);
+        if (missingCounters.includes('entry')) {
+          attempt('counter:entry', () => this._startCounterInstance(pythonCmd, this._configPath, counterCfg.entry || {}, 'entry', generation));
+        }
+        if (missingCounters.includes('exit')) {
+          attempt('counter:exit', () => this._startCounterInstance(pythonCmd, this._configPath, counterCfg.exit || {}, 'exit', generation));
+        }
+      } else if (missingCounters.includes('single')) {
+        attempt('counter:single', () => this._startCounter(pythonCmd, this._configPath, counterCfg, generation));
       }
     }
+
+    for (const camId of cvCameras) {
+      if (!this.processes.has(camId)) startErrors.push({ unit: `detector:${camId}`, message: 'Detector did not start' });
+      if (reidEnabled && !this.reidProcesses.has(camId)) startErrors.push({ unit: `reid:${camId}`, message: 'ReID did not start' });
+    }
+    if (counterCfg?.enabled) {
+      if (counterCfg.mode === 'dual') {
+        for (const role of ['entry', 'exit']) {
+          if (!this.counterProcesses.has(role)) startErrors.push({ unit: `counter:${role}`, message: 'Counter did not start' });
+        }
+      } else if (!this.counterProcess) {
+        startErrors.push({ unit: 'counter:single', message: 'Counter did not start' });
+      }
+    }
+
+    return {
+      ok: startErrors.length === 0,
+      error: startErrors.length > 0 ? startErrors.map(item => `${item.unit}: ${item.message}`).join('; ') : undefined,
+      errors: startErrors,
+      generation,
+      detectors: this.processes.size,
+      reid: this.reidProcesses.size,
+      counters: this.counterProcesses.size + (this.counterProcess ? 1 : 0),
+    };
   }
 
   stop() {
-    this.enabled = false;
+    if (this._stoppingPromise) return this._stoppingPromise;
 
-    // Snapshot current processes so a later start() is not killed by this stop() timeout.
+    const hadRuntime = this._active
+      || this.processes.size > 0
+      || this.reidProcesses.size > 0
+      || this.counterProcesses.size > 0
+      || !!this.counterProcess
+      || this._restartTimers.size > 0;
+
+    this.enabled = false;
+    this._active = false;
+    this._generation++;
+    const stoppedGeneration = this._generation;
+    this._cancelRestartTimers();
+
     const processEntries = [...this.processes.values()];
     const reidEntries = [...this.reidProcesses.values()];
     const counterEntries = [...this.counterProcesses.values()];
     const singleCounter = this.counterProcess;
+    const allEntries = [...processEntries, ...reidEntries, ...counterEntries];
+    if (singleCounter) allEntries.push(singleCounter);
 
-    // Collect PIDs before killing (needed for tree-kill on Windows)
-    const pids = [];
-    for (const entry of processEntries) {
-      console.log(`  👁️ CV [${entry.camId}]: parando (PID ${entry.pid})...`);
-      pids.push(entry.pid);
-      try { entry.process.kill('SIGTERM'); } catch {}
-    }
-
-    for (const entry of reidEntries) {
-      console.log(`  🔍 ReID [${entry.camId}]: parando (PID ${entry.pid})...`);
-      pids.push(entry.pid);
-      try { entry.process.kill('SIGTERM'); } catch {}
-    }
-
-    for (const cp of counterEntries) {
-      if (cp) { pids.push(cp.pid); try { cp.process.kill('SIGTERM'); } catch {} }
-    }
-    if (singleCounter) {
-      pids.push(singleCounter.pid);
-      try { singleCounter.process.kill('SIGTERM'); } catch {}
-    }
-
-    // Clear current references immediately so a future start() can boot cleanly.
+    // Ownership is cleared now, but start() is gated by _stoppingPromise until
+    // every old child exits (or the targeted force-kill timeout is reached).
     this.processes.clear();
     this.reidProcesses.clear();
     this.counterProcesses.clear();
     this.counterProcess = null;
     this._buffers.clear();
     this._reidBuffers.clear();
+    this._cache.clear();
+    this._readyInfo.clear();
+    this._reidReady.clear();
+    this._reidCache.clear();
 
-    setTimeout(() => {
-      for (const entry of processEntries) {
-        try { entry.process.kill('SIGKILL'); } catch {}
+    const result = hadRuntime
+      ? { ok: true, message: 'CV stopped', generation: stoppedGeneration }
+      : { ok: true, noOp: true, message: 'CV already stopped', generation: stoppedGeneration };
+    const processObjects = [...new Set(allEntries.map(entry => entry?.process).filter(Boolean))];
+    if (processObjects.length === 0) return Promise.resolve(result);
+
+    let resolveStop;
+    const stoppingPromise = new Promise(resolve => { resolveStop = resolve; });
+    this._stoppingPromise = stoppingPromise;
+    const remaining = new Set(processObjects);
+    const cleanupListeners = [];
+    let killTimer = null;
+    let finished = false;
+
+    const finish = (forced = false) => {
+      if (finished) return;
+      finished = true;
+      if (killTimer !== null && killTimer !== undefined) this._clearTimeout(killTimer);
+      for (const cleanup of cleanupListeners) cleanup();
+      if (this._stoppingPromise === stoppingPromise) this._stoppingPromise = null;
+      resolveStop(forced ? { ...result, forced: true } : result);
+    };
+
+    const markExited = proc => {
+      remaining.delete(proc);
+      if (remaining.size === 0) finish(false);
+    };
+
+    for (const proc of processObjects) {
+      const onDone = () => markExited(proc);
+      if (typeof proc.once === 'function') {
+        proc.once('exit', onDone);
+        proc.once('close', onDone);
+        cleanupListeners.push(() => {
+          try { proc.removeListener('exit', onDone); } catch {}
+          try { proc.removeListener('close', onDone); } catch {}
+        });
       }
-      for (const entry of reidEntries) {
-        try { entry.process.kill('SIGKILL'); } catch {}
-      }
-      for (const cp of counterEntries) {
-        if (cp) { try { cp.process.kill('SIGKILL'); } catch {} }
-      }
-      if (singleCounter) {
-        try { singleCounter.process.kill('SIGKILL'); } catch {}
+      if (proc.exitCode !== null && proc.exitCode !== undefined) markExited(proc);
+    }
+    if (finished) return stoppingPromise;
+
+    const pids = [...new Set(allEntries.map(entry => entry?.pid).filter(pid => pid != null))];
+    killTimer = this._setTimeout(() => {
+      for (const proc of remaining) {
+        try { proc.kill('SIGKILL'); } catch {}
       }
 
-      // Windows: taskkill /T kills entire process tree (catches orphan children
-      // from venv launcher or any subprocess). Safe even if PIDs already exited.
-      if (process.platform === 'win32') {
-        const { execSync } = require('child_process');
-        for (const pid of pids) {
-          try {
-            execSync(`taskkill /F /T /PID ${pid}`, { stdio: 'ignore', timeout: 5000 });
-          } catch {} // ignore — process may already be dead
-        }
+      // Target only captured old trees and never a PID already owned by a
+      // current generation (defensive against PID reuse).
+      const currentPids = new Set([
+        ...this.processes.values(),
+        ...this.reidProcesses.values(),
+        ...this.counterProcesses.values(),
+        ...(this.counterProcess ? [this.counterProcess] : []),
+      ].map(entry => entry?.pid).filter(pid => pid != null));
+      for (const pid of pids) {
+        if (currentPids.has(pid)) continue;
+        try { this._treeKill(pid); } catch { /* process may already be dead */ }
       }
+      finish(true);
     }, 5000);
+    if (killTimer?.unref) killTimer.unref();
+
+    // On Windows the venv launcher must still be alive when taskkill /T captures
+    // its descendants. Killing the launcher first can orphan python.exe.
+    if (this._platform === 'win32') {
+      for (const pid of pids) {
+        try { this._treeKill(pid); } catch { /* process may already be gone */ }
+      }
+      finish(true);
+      return stoppingPromise;
+    }
+
+    // POSIX path: graceful signal first, force-kill only after the timeout.
+    for (const entry of processEntries) {
+      console.log(`  👁️ CV [${entry.camId}]: parando (PID ${entry.pid})...`);
+      try { entry.process.kill('SIGTERM'); } catch {}
+    }
+    for (const entry of reidEntries) {
+      console.log(`  🔍 ReID [${entry.camId}]: parando (PID ${entry.pid})...`);
+      try { entry.process.kill('SIGTERM'); } catch {}
+    }
+    for (const entry of counterEntries) {
+      try { entry.process.kill('SIGTERM'); } catch {}
+    }
+    if (singleCounter) {
+      try { singleCounter.process.kill('SIGTERM'); } catch {}
+    }
+
+    return stoppingPromise;
   }
 
   reload(config) {
@@ -183,6 +346,11 @@ class CVManager extends EventEmitter {
     const strategy = this.cvConfig.countStrategy || 'max';
     const perCamera = {};
     const counts = [];
+    const expectedDetectorCount = cvCameras.length;
+    const expectedReidCount = this.cvConfig.reid?.enabled ? cvCameras.length : 0;
+    const expectedCounterCount = this.cvConfig.counter?.enabled
+      ? (this.cvConfig.counter.mode === 'dual' ? 2 : 1)
+      : 0;
 
     for (const camId of cvCameras) {
       const cached = this._cache.get(camId);
@@ -287,10 +455,32 @@ class CVManager extends EventEmitter {
     }
 
     const counterData = this._readCounterData();
+    const counterUnits = this.cvConfig.counter?.enabled
+      ? (this.cvConfig.counter.mode === 'dual'
+          ? ['entry', 'exit'].map(role => this._getCounterRuntimeStatus(role, this.counterProcesses.get(role)))
+          : [this._getCounterRuntimeStatus('single', this.counterProcess)])
+      : [];
+    const readyCounterCount = counterUnits.filter(unit => unit.ready).length;
 
     return {
       enabled: this.cvConfig.enabled || false,
-      running: this.processes.size > 0,
+      running: this.processes.size === expectedDetectorCount && expectedDetectorCount > 0,
+      ready: this.processes.size === expectedDetectorCount
+        && this._readyInfo.size >= expectedDetectorCount
+        && this.reidProcesses.size === expectedReidCount
+        && this._reidReady.size >= expectedReidCount
+        && (this.counterProcesses.size + (this.counterProcess ? 1 : 0)) === expectedCounterCount
+        && readyCounterCount === expectedCounterCount,
+      cardinality: {
+        detectors: { expected: expectedDetectorCount, running: this.processes.size, ready: this._readyInfo.size },
+        reid: { expected: expectedReidCount, running: this.reidProcesses.size, ready: this._reidReady.size },
+        counters: {
+          expected: expectedCounterCount,
+          running: this.counterProcesses.size + (this.counterProcess ? 1 : 0),
+          ready: readyCounterCount,
+          units: counterUnits,
+        },
+      },
       cameras: cvCameras.length,
       countStrategy: strategy,
       totalCount,
@@ -589,9 +779,50 @@ class CVManager extends EventEmitter {
     };
   }
 
+  // ─── Lifecycle restart guards ──────────────────────────────────────────────
+
+  _cancelRestartTimer(key) {
+    const timer = this._restartTimers.get(key);
+    if (timer === undefined || timer === null) return;
+    this._clearTimeout(timer);
+    this._restartTimers.delete(key);
+  }
+
+  _cancelRestartTimers() {
+    for (const timer of this._restartTimers.values()) {
+      this._clearTimeout(timer);
+    }
+    this._restartTimers.clear();
+  }
+
+  _scheduleRestart(key, generation, callback, delayMs = 10000) {
+    if (!this.enabled || !this._active || generation !== this._generation) return null;
+
+    this._cancelRestartTimer(key);
+    const timer = this._setTimeout(() => {
+      if (this._restartTimers.get(key) !== timer) return;
+      this._restartTimers.delete(key);
+      if (!this.enabled || !this._active || generation !== this._generation) return;
+      callback();
+    }, delayMs);
+    this._restartTimers.set(key, timer);
+    if (timer?.unref) timer.unref();
+    return timer;
+  }
+
+  _ownsProcess(map, key, proc, generation) {
+    const current = map.get(key);
+    return !!current && current.process === proc && current.generation === generation;
+  }
+
   // ─── Private: processo detector ────────────────────────────────────────────
 
-  _startDetector(camId, pythonCmd, configPath) {
+  _startDetector(camId, pythonCmd, configPath, generation = this._generation) {
+    if (!this.enabled || !this._active || generation !== this._generation) return null;
+    const existing = this.processes.get(camId);
+    if (existing) return existing;
+    this._cancelRestartTimer(`detector:${camId}`);
+
     const cam = this.camerasConfig.find(c => c.id === camId);
     if (!cam) {
       console.log(`  👁️ CV: câmera ${camId} não encontrada no config`);
@@ -624,16 +855,19 @@ class CVManager extends EventEmitter {
 
     console.log(`  👁️ CV [${camId}]: iniciando (${this.cvConfig.model || 'yolo11n'}, GPU ${this.cvConfig.gpu ?? 0})`);
 
-    const proc = spawn(pythonCmd, args, {
+    const proc = this._spawn(pythonCmd, args, {
       cwd: CV_DIR,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     });
+    const entry = { process: proc, pid: proc.pid, camId, generation };
+    this.processes.set(camId, entry);
 
     // ─── stdout: protocolo JSONL ──────────────────────────────────────────────
     this._buffers.set(camId, '');
 
     proc.stdout.on('data', (data) => {
+      if (!this._ownsProcess(this.processes, camId, proc, generation)) return;
       // Acumula buffer (pode chegar fragmentado)
       const buf = (this._buffers.get(camId) || '') + data.toString();
       const lines = buf.split('\n');
@@ -659,28 +893,32 @@ class CVManager extends EventEmitter {
 
     // stderr: logs Python (model loading, warnings, erros internos)
     proc.stderr.on('data', (data) => {
+      if (!this._ownsProcess(this.processes, camId, proc, generation)) return;
       data.toString().trim().split('\n').forEach(line => {
         if (line.trim()) console.log(`  👁️ [${camId}] ${line.trim()}`);
       });
     });
-
-    proc.on('exit', (code) => {
-      console.log(`  👁️ CV [${camId}]: processo encerrado (code ${code})`);
+    const handleTermination = (code, err = null) => {
+      if (!this._ownsProcess(this.processes, camId, proc, generation)) return;
+      if (err) console.error(`  👁️ CV [${camId}]: falha de processo — ${err.message}`);
+      else console.log(`  👁️ CV [${camId}]: processo encerrado (code ${code})`);
       this.processes.delete(camId);
       this._buffers.delete(camId);
+      this._readyInfo.delete(camId);
 
-      if (this.enabled && code !== 0) {
+      if (this.enabled && this._active && generation === this._generation) {
         console.log(`  👁️ CV [${camId}]: reiniciando em 10s...`);
-        setTimeout(() => {
-          if (this.enabled && !this.processes.has(camId)) {
-            const py = this._findPython();
-            if (py) this._startDetector(camId, py, configPath);
-          }
-        }, 10000);
+        this._scheduleRestart(`detector:${camId}`, generation, () => {
+          if (this.processes.has(camId)) return;
+          const py = this._findPython();
+          if (py) this._startDetector(camId, py, configPath, generation);
+        });
       }
-    });
+    };
+    proc.once('error', err => handleTermination(null, err));
+    proc.once('exit', code => handleTermination(code));
 
-    this.processes.set(camId, { process: proc, pid: proc.pid, camId });
+    return entry;
   }
 
   /**
@@ -739,7 +977,12 @@ class CVManager extends EventEmitter {
 
   // ─── ReID Process ──────────────────────────────────────────────────────────
 
-  _startReid(camId, pythonCmd, configPath) {
+  _startReid(camId, pythonCmd, configPath, generation = this._generation) {
+    if (!this.enabled || !this._active || generation !== this._generation) return null;
+    const existing = this.reidProcesses.get(camId);
+    if (existing) return existing;
+    this._cancelRestartTimer(`reid:${camId}`);
+
     if (!configPath) {
       console.log(`  🔍 ReID [${camId}]: sem config path, pulando`);
       return;
@@ -753,16 +996,19 @@ class CVManager extends EventEmitter {
 
     console.log(`  🔍 ReID [${camId}]: iniciando`);
 
-    const proc = spawn(pythonCmd, args, {
+    const proc = this._spawn(pythonCmd, args, {
       cwd: CV_DIR,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     });
+    const entry = { process: proc, pid: proc.pid, camId, generation };
+    this.reidProcesses.set(camId, entry);
 
     // ─── stdout: protocolo JSONL ──────────────────────────────────────────────
     this._reidBuffers.set(camId, '');
 
     proc.stdout.on('data', (data) => {
+      if (!this._ownsProcess(this.reidProcesses, camId, proc, generation)) return;
       const buf = (this._reidBuffers.get(camId) || '') + data.toString();
       const lines = buf.split('\n');
       this._reidBuffers.set(camId, lines.pop());
@@ -785,33 +1031,38 @@ class CVManager extends EventEmitter {
 
     // stderr: logs Python
     proc.stderr.on('data', (data) => {
+      if (!this._ownsProcess(this.reidProcesses, camId, proc, generation)) return;
       data.toString().trim().split('\n').forEach(line => {
         if (line.trim()) console.log(`  🔍 [${camId}] ${line.trim()}`);
       });
     });
-
-    proc.on('exit', (code) => {
-      console.log(`  🔍 ReID [${camId}]: processo encerrado (code ${code})`);
+    const handleTermination = (code, err = null) => {
+      if (!this._ownsProcess(this.reidProcesses, camId, proc, generation)) return;
+      if (err) console.error(`  🔍 ReID [${camId}]: falha de processo — ${err.message}`);
+      else console.log(`  🔍 ReID [${camId}]: processo encerrado (code ${code})`);
       this.reidProcesses.delete(camId);
       this._reidBuffers.delete(camId);
+      this._reidReady.delete(camId);
 
-      if (this.enabled && code !== 0) {
+      if (this.enabled && this._active && generation === this._generation) {
         console.log(`  🔍 ReID [${camId}]: reiniciando em 10s...`);
-        setTimeout(() => {
-          if (this.enabled && !this.reidProcesses.has(camId)) {
-            const py = this._findPython();
-            if (py) this._startReid(camId, py, configPath);
-          }
-        }, 10000);
+        this._scheduleRestart(`reid:${camId}`, generation, () => {
+          if (this.reidProcesses.has(camId)) return;
+          const py = this._findPython();
+          if (py) this._startReid(camId, py, configPath, generation);
+        });
       }
-    });
+    };
+    proc.once('error', err => handleTermination(null, err));
+    proc.once('exit', code => handleTermination(code));
 
-    this.reidProcesses.set(camId, { process: proc, pid: proc.pid, camId });
+    return entry;
   }
 
   _handleReidEvent(camId, event) {
     switch (event.event) {
       case 'ready':
+        this._reidReady.add(camId);
         console.log(`  🔍 ReID [${camId}]: pronto | ${event.backend} | zonas: ${(event.sameZoneCameras || []).join(', ') || 'nenhuma'}`);
         this.emit('reid_ready', { camId, ...event });
         break;
@@ -862,7 +1113,12 @@ class CVManager extends EventEmitter {
   // ─── Visitor Counter (arquivo-based, inalterado) ───────────────────────────
 
   // Dual-camera helper: one instance per role ('entry' or 'exit')
-  _startCounterInstance(pythonCmd, configPath, cfg, role) {
+  _startCounterInstance(pythonCmd, configPath, cfg, role, generation = this._generation) {
+    if (!this.enabled || !this._active || generation !== this._generation) return null;
+    const existing = this.counterProcesses.get(role);
+    if (existing) return existing;
+    this._cancelRestartTimer(`counter:${role}`);
+
     const camId = cfg.camera || (role === 'entry' ? 'cam-1' : 'cam-2');
     const cam = this.camerasConfig.find(c => c.id === camId);
     const user = cam ? encodeURIComponent(cam.user || 'admin') : 'admin';
@@ -884,33 +1140,48 @@ class CVManager extends EventEmitter {
     if (configPath) args.push('--config', configPath);
 
     console.log(`  👁️ CV [counter-${role}]: iniciando em ${camId}`);
+    try { fs.unlinkSync(this._counterStatusPath(role)); } catch {}
 
-    const proc = spawn(pythonCmd, args, {
+    const proc = this._spawn(pythonCmd, args, {
       cwd: CV_DIR,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     });
+    const entry = { process: proc, pid: proc.pid, role, generation, startedAt: Date.now() };
+    this.counterProcesses.set(role, entry);
 
-    proc.stdout.on('data', d => d.toString().trim().split('\n').forEach(l => l.trim() && console.log(`  👁️ [counter-${role}] ${l.trim()}`)));
-    proc.stderr.on('data', d => d.toString().trim().split('\n').forEach(l => l.trim() && console.error(`  👁️ [counter-${role}] [err] ${l.trim()}`)));
-
-    proc.on('exit', (code) => {
-      console.log(`  👁️ CV [counter-${role}]: encerrado (code ${code})`);
-      this.counterProcesses.delete(role);
-      if (this.enabled && code !== 0) {
-        setTimeout(() => {
-          if (this.enabled) {
-            const py = this._findPython();
-            if (py) this._startCounterInstance(py, configPath, cfg, role);
-          }
-        }, 10000);
-      }
+    proc.stdout.on('data', d => {
+      if (!this._ownsProcess(this.counterProcesses, role, proc, generation)) return;
+      d.toString().trim().split('\n').forEach(l => l.trim() && console.log(`  👁️ [counter-${role}] ${l.trim()}`));
     });
+    proc.stderr.on('data', d => {
+      if (!this._ownsProcess(this.counterProcesses, role, proc, generation)) return;
+      d.toString().trim().split('\n').forEach(l => l.trim() && console.error(`  👁️ [counter-${role}] [err] ${l.trim()}`));
+    });
+    const handleTermination = (code, err = null) => {
+      if (!this._ownsProcess(this.counterProcesses, role, proc, generation)) return;
+      if (err) console.error(`  👁️ CV [counter-${role}]: falha de processo — ${err.message}`);
+      else console.log(`  👁️ CV [counter-${role}]: encerrado (code ${code})`);
+      this.counterProcesses.delete(role);
+      if (this.enabled && this._active && generation === this._generation) {
+        this._scheduleRestart(`counter:${role}`, generation, () => {
+          if (this.counterProcesses.has(role)) return;
+          const py = this._findPython();
+          if (py) this._startCounterInstance(py, configPath, cfg, role, generation);
+        });
+      }
+    };
+    proc.once('error', err => handleTermination(null, err));
+    proc.once('exit', code => handleTermination(code));
 
-    this.counterProcesses.set(role, { process: proc, pid: proc.pid });
+    return entry;
   }
 
-  _startCounter(pythonCmd, configPath, counterCfg) {
+  _startCounter(pythonCmd, configPath, counterCfg, generation = this._generation) {
+    if (!this.enabled || !this._active || generation !== this._generation) return null;
+    if (this.counterProcess) return this.counterProcess;
+    this._cancelRestartTimer('counter:single');
+
     const camId = counterCfg.camera || 'cam-2';
     const cam = this.camerasConfig.find(c => c.id === camId);
     const user = cam ? encodeURIComponent(cam.user || 'admin') : 'admin';
@@ -932,33 +1203,64 @@ class CVManager extends EventEmitter {
     if (configPath) args.push('--config', configPath);
 
     console.log(`  👁️ CV [counter]: iniciando em ${camId}`);
+    try { fs.unlinkSync(this._counterStatusPath('single')); } catch {}
 
-    const proc = spawn(pythonCmd, args, {
+    const proc = this._spawn(pythonCmd, args, {
       cwd: CV_DIR,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     });
+    const entry = { process: proc, pid: proc.pid, generation, startedAt: Date.now() };
+    this.counterProcess = entry;
+    const ownsProcess = () => this.counterProcess?.process === proc
+      && this.counterProcess?.generation === generation;
 
-    proc.stdout.on('data', d => d.toString().trim().split('\n').forEach(l => l.trim() && console.log(`  👁️ [counter] ${l.trim()}`)));
-    proc.stderr.on('data', d => d.toString().trim().split('\n').forEach(l => l.trim() && console.error(`  👁️ [counter] [err] ${l.trim()}`)));
-
-    proc.on('exit', (code) => {
-      console.log(`  👁️ CV [counter]: encerrado (code ${code})`);
-      this.counterProcess = null;
-      if (this.enabled && code !== 0) {
-        setTimeout(() => {
-          if (this.enabled) {
-            const py = this._findPython();
-            if (py) this._startCounter(py, configPath, counterCfg);
-          }
-        }, 10000);
-      }
+    proc.stdout.on('data', d => {
+      if (!ownsProcess()) return;
+      d.toString().trim().split('\n').forEach(l => l.trim() && console.log(`  👁️ [counter] ${l.trim()}`));
     });
+    proc.stderr.on('data', d => {
+      if (!ownsProcess()) return;
+      d.toString().trim().split('\n').forEach(l => l.trim() && console.error(`  👁️ [counter] [err] ${l.trim()}`));
+    });
+    const handleTermination = (code, err = null) => {
+      if (!ownsProcess()) return;
+      if (err) console.error(`  👁️ CV [counter]: falha de processo — ${err.message}`);
+      else console.log(`  👁️ CV [counter]: encerrado (code ${code})`);
+      this.counterProcess = null;
+      if (this.enabled && this._active && generation === this._generation) {
+        this._scheduleRestart('counter:single', generation, () => {
+          if (this.counterProcess) return;
+          const py = this._findPython();
+          if (py) this._startCounter(py, configPath, counterCfg, generation);
+        });
+      }
+    };
+    proc.once('error', err => handleTermination(null, err));
+    proc.once('exit', code => handleTermination(code));
 
-    this.counterProcess = { process: proc, pid: proc.pid };
+    return entry;
   }
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
+
+  _counterStatusPath(role) {
+    return role === 'single'
+      ? path.join(OUTPUT_DIR, 'counter', 'status.json')
+      : path.join(OUTPUT_DIR, 'counter', role, 'status.json');
+  }
+
+  _getCounterRuntimeStatus(role, entry) {
+    const status = this._readJsonFile(this._counterStatusPath(role));
+    const timestampMs = Date.parse(status?.timestamp || '');
+    const freshForProcess = !!entry && Number.isFinite(timestampMs) && timestampMs >= (entry.startedAt - 2000);
+    return {
+      role,
+      status: status?.status || 'missing',
+      timestamp: status?.timestamp || null,
+      ready: !!entry && status?.status === 'running' && freshForProcess,
+    };
+  }
 
   _readDetectionsFile(camId) {
     const file = camId

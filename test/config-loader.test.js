@@ -1,14 +1,16 @@
 // test/config-loader.test.js
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
+const fs = require('fs');
+const path = require('path');
 const { loadConfig, getConfigName } = require('../core/config-loader');
 
 describe('config-loader', () => {
   it('should load a valid config', () => {
-    const result = loadConfig('beleza-astral');
+    const result = loadConfig('template-amano-rio');
     assert.strictEqual(result.valid, true);
     assert.ok(result.config);
-    assert.strictEqual(result.config._name, 'beleza-astral');
+    assert.strictEqual(result.config._name, 'template-amano-rio');
     assert.ok(result.config.exhibition);
   });
 
@@ -19,35 +21,30 @@ describe('config-loader', () => {
     assert.ok(Array.isArray(result.available));
   });
 
-  it('should handle BOM in config files', () => {
-    // This would require a test config with BOM, but we test that the function exists
-    const result = loadConfig('beleza-astral');
+  it('should handle BOM in config files', (t) => {
+    const name = 'test-bom-resilience';
+    const target = path.join(__dirname, '..', 'config', `${name}.json`);
+    const source = fs.readFileSync(path.join(__dirname, '..', 'config', 'template-amano-rio.json'), 'utf8');
+    fs.writeFileSync(target, `\uFEFF${source}`);
+    t.after(() => { try { fs.unlinkSync(target); } catch {} });
+    const result = loadConfig(name);
     assert.strictEqual(result.valid, true);
+    assert.strictEqual(result.config._name, name);
   });
 
   it('getConfigName should return null when no --config arg', () => {
-    // Save original argv
     const originalArgv = process.argv;
-    
-    // Test without --config
     process.argv = ['node', 'index.js'];
     const result = getConfigName();
     assert.strictEqual(result, null);
-    
-    // Restore argv
     process.argv = originalArgv;
   });
 
   it('getConfigName should parse --config= argument', () => {
-    // Save original argv
     const originalArgv = process.argv;
-    
-    // Test with --config
     process.argv = ['node', 'index.js', '--config=test-config'];
     const result = getConfigName();
     assert.strictEqual(result, 'test-config');
-    
-    // Restore argv
     process.argv = originalArgv;
   });
 });

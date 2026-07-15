@@ -74,18 +74,41 @@ module.exports = function(app, cluster) {
     res.send(frame);
   });
 
-  app.post('/api/cv/start', (req, res) => {
+  app.post('/api/cv/start', async (_req, res) => {
     try {
-      cvManager.start();
-      res.json({ ok: true, data: { message: 'CV started' } });
+      const schedule = cluster.scheduler?.getStatus?.();
+      if (schedule && schedule.desiredState !== 'open') {
+        return res.status(409).json({ ok: false, error: 'CV follows the exhibition schedule; use schedule/open', code: 'SCHEDULE_CLOSED' });
+      }
+      const result = await cvManager.start();
+      if (result?.ok === false) {
+        return res.status(500).json({ ok: false, error: result.error || 'CV start failed', code: 'CV_START_FAILED', data: result });
+      }
+      const loggerResult = cluster.data?.onOpen ? await cluster.data.onOpen() : null;
+      if (loggerResult?.ok === false) {
+        return res.status(500).json({ ok: false, error: loggerResult.error || 'CV logger start failed', code: 'CV_LOGGER_START_FAILED', data: { cv: result, logger: loggerResult } });
+      }
+      res.json({ ok: true, data: { message: 'CV started', cv: result, logger: loggerResult } });
     } catch (err) {
       res.status(500).json({ ok: false, error: err.message, code: 'CV_START_FAILED' });
     }
   });
 
-  app.post('/api/cv/stop', (req, res) => {
-    cvManager.stop();
-    res.json({ ok: true, data: { message: 'CV stopped' } });
+  app.post('/api/cv/stop', async (_req, res) => {
+    try {
+      const schedule = cluster.scheduler?.getStatus?.();
+      if (schedule && schedule.desiredState === 'open') {
+        return res.status(409).json({ ok: false, error: 'CV must remain active while the exhibition is open; use schedule/close', code: 'SCHEDULE_OPEN' });
+      }
+      const loggerResult = cluster.data?.onClose ? await cluster.data.onClose() : null;
+      const result = await cvManager.stop();
+      if (result?.ok === false || loggerResult?.ok === false) {
+        return res.status(500).json({ ok: false, error: result?.error || loggerResult?.error || 'CV stop failed', code: 'CV_STOP_FAILED', data: { cv: result, logger: loggerResult } });
+      }
+      res.json({ ok: true, data: { message: 'CV stopped', cv: result, logger: loggerResult } });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message, code: 'CV_STOP_FAILED' });
+    }
   });
 
   app.post('/api/cv/heatmap/reset', (req, res) => {
