@@ -454,7 +454,7 @@ class CVManager extends EventEmitter {
       }
     }
 
-    const counterData = this._readCounterData();
+    const counterData = this.cvConfig.counter?.enabled ? this._readCounterData() : null;
     const counterUnits = this.cvConfig.counter?.enabled
       ? (this.cvConfig.counter.mode === 'dual'
           ? ['entry', 'exit'].map(role => this._getCounterRuntimeStatus(role, this.counterProcesses.get(role)))

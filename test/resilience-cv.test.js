@@ -113,6 +113,17 @@ describe('Epic 1 CV cardinality', () => {
     assert.ok(counterCalls.every(call => modelFor(call) === 'counter-small'));
   });
 
+  it('does not expose stale counter files while the counter is disabled', (t) => {
+    quiet(t);
+    const timers = fakeTimers();
+    const fixture = makeManager(cvConfig({ reid: { enabled: false }, counter: { enabled: false } }), timers);
+    fixture.manager._readCounterData = () => ({ entries: 99, exits: 10, occupancy: 89 });
+
+    const status = fixture.manager.getStatus();
+    assert.deepEqual(status.counter, { running: false, enabled: false });
+    assert.equal(status.cardinality.counters.expected, 0);
+  });
+
   it('keeps one detector/ReID/counter per unit and fills only missing units', async (t) => {
     quiet(t);
     t.mock.method(fs, 'existsSync', () => true); // prevents output/config filesystem writes
