@@ -96,6 +96,23 @@ function makeManager(config, timers, extraOpts = {}) {
 }
 
 describe('Epic 1 CV cardinality', () => {
+  it('supports a larger detector model without changing the counter model', (t) => {
+    quiet(t);
+    t.mock.method(fs, 'existsSync', () => true);
+    const timers = fakeTimers();
+    const fixture = makeManager(cvConfig({ detectorModel: 'detector-large', model: 'counter-small' }), timers);
+
+    fixture.manager.start();
+    const modelFor = call => call.args[call.args.indexOf('--model') + 1];
+    const detectorCalls = fixture.spawnCalls.filter(call => path.basename(call.args[0]) === 'detector.py');
+    const counterCalls = fixture.spawnCalls.filter(call => path.basename(call.args[0]) === 'counter.py');
+
+    assert.equal(detectorCalls.length, 2);
+    assert.equal(counterCalls.length, 2);
+    assert.ok(detectorCalls.every(call => modelFor(call) === 'detector-large'));
+    assert.ok(counterCalls.every(call => modelFor(call) === 'counter-small'));
+  });
+
   it('keeps one detector/ReID/counter per unit and fills only missing units', async (t) => {
     quiet(t);
     t.mock.method(fs, 'existsSync', () => true); // prevents output/config filesystem writes

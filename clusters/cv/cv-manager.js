@@ -363,7 +363,7 @@ class CVManager extends EventEmitter {
         fps: cached?.fps ?? 0,
         running: this.processes.has(camId),
         pid: this.processes.get(camId)?.pid || null,
-        model: readyInfo.model || this.cvConfig.model || 'yolo11n',
+        model: readyInfo.model || this.cvConfig.detectorModel || this.cvConfig.model || 'yolo11n',
         format: readyInfo.format || 'unknown',
         gpuName: readyInfo.gpuName || null,
         zones: cached?.zones || {},
@@ -506,7 +506,7 @@ class CVManager extends EventEmitter {
             ...counterData
           }
         : { running: this.counterProcess != null || this.counterProcesses.size > 0, enabled: !!(this.cvConfig.counter?.enabled) },
-      model: this.cvConfig.model || 'yolo11n',
+      model: this.cvConfig.detectorModel || this.cvConfig.model || 'yolo11n',
       gpu: this.cvConfig.gpu ?? 0,
       protocol: 'jsonl-v2',
     };
@@ -838,13 +838,14 @@ class CVManager extends EventEmitter {
     const pass = cam.password ? encodeURIComponent(cam.password) : '';
     const rtspUrl = `rtsp://${user}:${pass}@${cam.ip}:554/cam/realmonitor?channel=1&subtype=0`;
 
+    const detectorModel = this.cvConfig.detectorModel || this.cvConfig.model || 'yolo11n';
     const args = [
       path.join(CV_DIR, 'detector.py'),
       '--camera-id', camId,
       '--rtsp', rtspUrl,
       '--gpu', String(this.cvConfig.gpu ?? 0),
       '--interval', String(this.cvConfig.interval ?? 0),
-      '--model', this.cvConfig.model || 'yolo11n',
+      '--model', detectorModel,
       '--confidence', String(this.cvConfig.confidence ?? 0.4),
       '--heatmap-decay', String(this.cvConfig.heatmapDecay ?? 0.999),
       '--imgsz', String(this.cvConfig.imgsz ?? 640),
@@ -853,7 +854,7 @@ class CVManager extends EventEmitter {
     if (configPath) args.push('--config', configPath);
     if (this.cvConfig.noTrt) args.push('--no-trt');
 
-    console.log(`  👁️ CV [${camId}]: iniciando (${this.cvConfig.model || 'yolo11n'}, GPU ${this.cvConfig.gpu ?? 0})`);
+    console.log(`  👁️ CV [${camId}]: iniciando (${detectorModel}, GPU ${this.cvConfig.gpu ?? 0})`);
 
     const proc = this._spawn(pythonCmd, args, {
       cwd: CV_DIR,
