@@ -252,6 +252,7 @@ const COLORS = ['#3b82f6','#22c55e','#f59e0b','#ec4899','#8b5cf6','#06b6d4','#f9
 let config = {};
 let currentCam = null;
 let frameRequestId = 0;
+let sourceFrameW = 1920, sourceFrameH = 1080;
 let currentTool = 'zone';
 let activeZoneId = null;
 let drawing = [];      // pontos em construção (zona)
@@ -308,10 +309,11 @@ function refreshFrame() {
   img.style.display = 'none';
   noFrame.style.display = 'flex';
   noFrame.textContent = `${requestedCam}: carregando frame...`;
-  // Snapshot HD funciona mesmo com o CV parado (ex.: segunda-feira fechada).
+  // Prefer the detector frame because it matches the 1920x1080 RTSP geometry.
+  // Camera HTTP snapshots are a fallback and may use a 640x480 substream.
   const urls = [
-    `/api/cameras/${requestedCam}/snapshot?hd=1&t=${Date.now()}`,
     `/api/cv/${requestedCam}/frame?t=${Date.now()}`,
+    `/api/cameras/${requestedCam}/snapshot?hd=1&t=${Date.now()}`,
   ];
   const trySource = index => {
     if (requestId !== frameRequestId || currentCam !== requestedCam) return;
@@ -323,6 +325,8 @@ function refreshFrame() {
     const tmp = new Image();
     tmp.onload = () => {
       if (requestId !== frameRequestId || currentCam !== requestedCam) return;
+      sourceFrameW = tmp.naturalWidth || FRAME_W;
+      sourceFrameH = tmp.naturalHeight || FRAME_H;
       img.src = urls[index];
       img.style.display = '';
       noFrame.style.display = 'none';
@@ -346,22 +350,26 @@ function resizeCanvas() {
   cv.height = wrap.clientHeight;
 }
 
-/** Canvas px → frame 1920×1080 */
+/** Canvas px → canonical counter frame 1920×1080. */
 function c2f(cx, cy) {
   const wrap = document.getElementById('canvas-wrap');
-  const s = Math.min(wrap.clientWidth / FRAME_W, wrap.clientHeight / FRAME_H);
-  const ox = (wrap.clientWidth - FRAME_W * s) / 2;
-  const oy = (wrap.clientHeight - FRAME_H * s) / 2;
-  return [Math.round((cx - ox) / s), Math.round((cy - oy) / s)];
+  const s = Math.min(wrap.clientWidth / sourceFrameW, wrap.clientHeight / sourceFrameH);
+  const ox = (wrap.clientWidth - sourceFrameW * s) / 2;
+  const oy = (wrap.clientHeight - sourceFrameH * s) / 2;
+  const sourceX = (cx - ox) / s;
+  const sourceY = (cy - oy) / s;
+  return [Math.round(sourceX / sourceFrameW * FRAME_W), Math.round(sourceY / sourceFrameH * FRAME_H)];
 }
 
-/** Frame 1920×1080 → canvas px */
+/** Canonical counter frame 1920×1080 → displayed source/canvas px. */
 function f2c(fx, fy) {
   const wrap = document.getElementById('canvas-wrap');
-  const s = Math.min(wrap.clientWidth / FRAME_W, wrap.clientHeight / FRAME_H);
-  const ox = (wrap.clientWidth - FRAME_W * s) / 2;
-  const oy = (wrap.clientHeight - FRAME_H * s) / 2;
-  return [ox + fx * s, oy + fy * s];
+  const s = Math.min(wrap.clientWidth / sourceFrameW, wrap.clientHeight / sourceFrameH);
+  const ox = (wrap.clientWidth - sourceFrameW * s) / 2;
+  const oy = (wrap.clientHeight - sourceFrameH * s) / 2;
+  const sourceX = fx / FRAME_W * sourceFrameW;
+  const sourceY = fy / FRAME_H * sourceFrameH;
+  return [ox + sourceX * s, oy + sourceY * s];
 }
 
 // ── Cliques ────────────────────────────────────────────────────────────────
@@ -498,16 +506,16 @@ function renderOverlay() {
     if (camPoly === 'full') {
       // Frame inteiro — borda pontilhada
       const wrap = document.getElementById('canvas-wrap');
-      const s = Math.min(wrap.clientWidth / FRAME_W, wrap.clientHeight / FRAME_H);
-      const ox = (wrap.clientWidth - FRAME_W * s) / 2;
-      const oy = (wrap.clientHeight - FRAME_H * s) / 2;
+      const s = Math.min(wrap.clientWidth / sourceFrameW, wrap.clientHeight / sourceFrameH);
+      const ox = (wrap.clientWidth - sourceFrameW * s) / 2;
+      const oy = (wrap.clientHeight - sourceFrameH * s) / 2;
       ctx.strokeStyle = color;
       ctx.lineWidth = isActive ? 2 : 1;
       ctx.setLineDash([6, 4]);
-      ctx.strokeRect(ox + 4, oy + 4, FRAME_W * s - 8, FRAME_H * s - 8);
+      ctx.strokeRect(ox + 4, oy + 4, sourceFrameW * s - 8, sourceFrameH * s - 8);
       ctx.setLineDash([]);
       ctx.fillStyle = hexAlpha(color, .07);
-      ctx.fillRect(ox + 4, oy + 4, FRAME_W * s - 8, FRAME_H * s - 8);
+      ctx.fillRect(ox + 4, oy + 4, sourceFrameW * s - 8, sourceFrameH * s - 8);
       // Label
       ctx.fillStyle = color;
       ctx.font = '13px Inter, sans-serif';
