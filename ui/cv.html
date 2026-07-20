@@ -545,23 +545,33 @@
       // Load config for line editor + camera selector
       try {
         const cfg = await api('/api/config');
-        const lineStr = cfg.cv?.counter?.line || '500,480,1400,480';
-        const parts = lineStr.split(',').map(Number);
-        leLineReal = { x1: parts[0], y1: parts[1], x2: parts[2], y2: parts[3] };
-        leCounterCam = cfg.cv?.counter?.camera || 'cam-2';
         counterEnabled = !!cfg.cv?.counter?.enabled;
+        if (cfg.cv?.counter?.mode === 'dual') {
+          $('lineEditorSection').innerHTML = `
+            <div style="padding:18px;display:flex;align-items:center;justify-content:space-between;gap:16px;">
+              <div>
+                <div style="font-size:12px;font-weight:600;margin-bottom:5px;">Dois acessos bidirecionais configurados</div>
+                <div style="font-size:11px;color:var(--text-dim);">Use a tela de calibração para editar Acesso A e Acesso B com segurança.</div>
+              </div>
+              <a class="btn btn-sm btn-on" href="/cv-calibrate.html">⊹ Abrir calibração</a>
+            </div>`;
+        } else {
+          const lineStr = cfg.cv?.counter?.line || '500,480,1400,480';
+          const parts = lineStr.split(',').map(Number);
+          leLineReal = { x1: parts[0], y1: parts[1], x2: parts[2], y2: parts[3] };
+          leCounterCam = cfg.cv?.counter?.camera || 'cam-2';
 
-        // Populate camera selector
-        const select = $('leCamSelect');
-        (cfg.cameras || []).forEach(c => {
-          const opt = document.createElement('option');
-          opt.value = c.id;
-          opt.textContent = `${c.id} — ${c.name || c.id}`;
-          if (c.id === leCounterCam) opt.selected = true;
-          select.appendChild(opt);
-        });
-
-        leInit();
+          // Populate camera selector for the legacy single-line mode only.
+          const select = $('leCamSelect');
+          (cfg.cameras || []).forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c.id;
+            opt.textContent = `${c.id} — ${c.name || c.id}`;
+            if (c.id === leCounterCam) opt.selected = true;
+            select.appendChild(opt);
+          });
+          leInit();
+        }
       } catch {}
 
       // Initial data load
@@ -574,7 +584,9 @@
     // ── API helper ─────────────────────────────────
     async function api(url, opts) {
       const res = await fetch(url, opts);
-      return res.json();
+      const body = await res.json();
+      if (!res.ok || body?.ok === false) throw new Error(body?.error || `HTTP ${res.status}`);
+      return body && Object.prototype.hasOwnProperty.call(body, 'data') ? body.data : body;
     }
 
     // ── Refresh all CV data ────────────────────────

@@ -100,7 +100,17 @@ describe('Epic 1 CV cardinality', () => {
     quiet(t);
     t.mock.method(fs, 'existsSync', () => true);
     const timers = fakeTimers();
-    const fixture = makeManager(cvConfig({ detectorModel: 'detector-large', model: 'counter-small' }), timers);
+    const fixture = makeManager(cvConfig({
+      detectorModel: 'detector-large',
+      model: 'legacy-small',
+      counter: {
+        enabled: true,
+        mode: 'dual',
+        model: 'counter-large',
+        entry: { camera: 'cam-1' },
+        exit: { camera: 'cam-2' },
+      },
+    }), timers);
 
     fixture.manager.start();
     const modelFor = call => call.args[call.args.indexOf('--model') + 1];
@@ -110,7 +120,50 @@ describe('Epic 1 CV cardinality', () => {
     assert.equal(detectorCalls.length, 2);
     assert.equal(counterCalls.length, 2);
     assert.ok(detectorCalls.every(call => modelFor(call) === 'detector-large'));
-    assert.ok(counterCalls.every(call => modelFor(call) === 'counter-small'));
+    assert.ok(counterCalls.every(call => modelFor(call) === 'counter-large'));
+  });
+
+  it('coalesces concurrent maintenance restarts', async (t) => {
+    quiet(t);
+    t.mock.method(fs, 'existsSync', () => true);
+    const timers = fakeTimers();
+    const fixture = makeManager(cvConfig({
+      cameras: ['cam-1'], reid: { enabled: false }, counter: { enabled: false },
+    }), timers);
+    fixture.manager.start();
+
+    const first = fixture.manager.restart(() => true);
+    const second = fixture.manager.restart(() => true);
+    assert.strictEqual(first, second);
+    const result = await first;
+
+    assert.equal(result.ok, true);
+    assert.equal(fixture.spawnCalls.length, 2);
+    assert.equal(fixture.manager.processes.size, 1);
+  });
+
+  it('lets scheduler stop cancel an in-flight maintenance restart', async (t) => {
+    quiet(t);
+    t.mock.method(fs, 'existsSync', () => true);
+    const timers = fakeTimers();
+    const fixture = makeManager(cvConfig({
+      cameras: ['cam-1'], reid: { enabled: false }, counter: { enabled: false },
+    }), timers);
+    fixture.manager.start();
+    fixture.children[0].autoExit = false;
+
+    const restarting = fixture.manager.restart(() => true);
+    const schedulerStop = fixture.manager.stop();
+    const forceStop = timers.records.find(timer => timer.delay === 5000 && !timer.cancelled);
+    assert.ok(forceStop);
+    forceStop.fn();
+
+    await schedulerStop;
+    const result = await restarting;
+    assert.equal(result.ok, false);
+    assert.equal(result.cancelled, true);
+    assert.equal(fixture.spawnCalls.length, 1, 'cancelled restart must not resurrect CV');
+    assert.equal(fixture.manager.processes.size, 0);
   });
 
   it('does not expose stale counter files while the counter is disabled', (t) => {

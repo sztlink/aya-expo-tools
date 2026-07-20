@@ -9,6 +9,24 @@ const cvReport = require('../data/cv-report');
 // Lines 867-1018
 module.exports = function(app, cluster) {
   const { cvManager } = cluster;
+  let restartInFlight = null;
+  const restartTimeoutMs = cluster.cvRestartTimeoutMs || 60000;
+  const scheduleAllowsRestart = () => {
+    const schedule = cluster.scheduler?.getStatus?.();
+    if (!schedule) return true;
+    return schedule.state === 'open'
+      && schedule.desiredState === 'open'
+      && !schedule.transition
+      && (schedule.pendingTransitions?.length || 0) === 0;
+  };
+  const waitForReady = async () => {
+    const deadline = Date.now() + restartTimeoutMs;
+    while (Date.now() < deadline) {
+      if (cvManager.getStatus()?.ready) return true;
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    return false;
+  };
 
   app.get('/api/cv/status', (req, res) => {
     res.json({ ok: true, data: cvManager.getStatus() });
@@ -91,6 +109,37 @@ module.exports = function(app, cluster) {
       res.json({ ok: true, data: { message: 'CV started', cv: result, logger: loggerResult } });
     } catch (err) {
       res.status(500).json({ ok: false, error: err.message, code: 'CV_START_FAILED' });
+    }
+  });
+
+  app.post('/api/cv/restart', async (_req, res) => {
+    if (!scheduleAllowsRestart()) {
+      return res.status(409).json({ ok: false, error: 'CV restart is only available while the exhibition is stably open; configuration will apply on next opening', code: 'SCHEDULE_NOT_STABLY_OPEN' });
+    }
+    try {
+      if (!restartInFlight) {
+        restartInFlight = (async () => {
+          const result = await cvManager.restart(scheduleAllowsRestart);
+          if (result?.ok === false) return { ok: false, result };
+          const ready = await waitForReady();
+          return ready
+            ? { ok: true, result }
+            : { ok: false, result: { ...result, error: 'CV readiness timeout after restart' } };
+        })().finally(() => { restartInFlight = null; });
+      }
+      const outcome = await restartInFlight;
+      if (!outcome.ok) {
+        const cancelled = !!outcome.result?.cancelled;
+        return res.status(cancelled ? 409 : 500).json({
+          ok: false,
+          error: outcome.result?.error || 'CV restart failed',
+          code: cancelled ? 'CV_RESTART_CANCELLED' : 'CV_RESTART_FAILED',
+          data: outcome.result,
+        });
+      }
+      res.json({ ok: true, data: { message: 'CV restarted and ready', cv: outcome.result } });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message, code: 'CV_RESTART_FAILED' });
     }
   });
 

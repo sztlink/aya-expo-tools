@@ -100,7 +100,7 @@
     "cameras": ["cam-1", "cam-2"],
     "model": "yolov8n",
     "counter": {
-      "enabled": true,
+      "enabled": false,
       "mode": "dual",
       "entry": {
         "camera": "cam-1",

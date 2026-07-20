@@ -1,6 +1,7 @@
 // core/routes/config.js
 const fs = require('fs');
 const path = require('path');
+const { validateCvCalibration } = require('../../clusters/cv/calibration-config');
 
 module.exports = function(app, { config, configName, configPath, projectors, cameras, scheduler, cvManager }) {
   // ─── API: Exhibition Info ──────────────────────────────────
@@ -23,6 +24,30 @@ module.exports = function(app, { config, configName, configPath, projectors, cam
   app.put('/api/config', (req, res) => {
     try {
       const updated = req.body;
+      const operational = scheduler?.getStatus?.();
+      if (operational) {
+        const noTransition = !operational.transition && (operational.pendingTransitions?.length || 0) === 0;
+        const stable = ['open', 'closed'].includes(operational.state)
+          && operational.state === operational.desiredState
+          && noTransition;
+        const cvChanged = JSON.stringify(updated?.cv ?? null) !== JSON.stringify(config?.cv ?? null);
+        const cvMaintenanceWindow = operational.state === 'closed'
+          && operational.desiredState === 'closed'
+          && noTransition;
+        if (!stable || (cvChanged && !cvMaintenanceWindow)) {
+          return res.status(409).json({
+            ok: false,
+            error: cvChanged
+              ? 'CV configuration changes require the exhibition to be stably closed'
+              : 'Configuration changes are blocked during operational transitions',
+            code: cvChanged ? 'CV_MAINTENANCE_WINDOW_REQUIRED' : 'SCHEDULE_TRANSITION',
+          });
+        }
+      }
+      const calibration = validateCvCalibration(updated);
+      if (!calibration.ok) {
+        return res.status(400).json({ ok: false, error: calibration.errors.join('; '), code: 'INVALID_CV_CALIBRATION', errors: calibration.errors });
+      }
       const cfgPath = path.join(__dirname, '..', '..', 'config', `${configName}.json`);
       fs.writeFileSync(cfgPath, JSON.stringify(updated, null, 2));
       // Update in-memory config and reload all managers

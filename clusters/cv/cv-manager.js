@@ -62,6 +62,8 @@ class CVManager extends EventEmitter {
     this._restartTimers = new Map(); // unit key → timeout
     this._stoppingPromise = null;
     this._pendingStartPromise = null;
+    this._restartPromise = null;
+    this._maintenanceRestart = null;
     this._spawn = opts.spawn || spawn;
     this._setTimeout = opts.setTimeout || setTimeout;
     this._clearTimeout = opts.clearTimeout || clearTimeout;
@@ -202,7 +204,12 @@ class CVManager extends EventEmitter {
     };
   }
 
-  stop() {
+  stop(options = {}) {
+    // A scheduler close/shutdown always wins over an in-flight maintenance
+    // restart. The restart's own stop is the only call that preserves its token.
+    if (!options.forRestart && this._maintenanceRestart) {
+      this._maintenanceRestart.cancelled = true;
+    }
     if (this._stoppingPromise) return this._stoppingPromise;
 
     const hadRuntime = this._active
@@ -331,11 +338,28 @@ class CVManager extends EventEmitter {
     return stoppingPromise;
   }
 
+  restart(shouldStart = () => true) {
+    if (this._restartPromise) return this._restartPromise;
+    const token = { cancelled: false };
+    this._maintenanceRestart = token;
+    this._restartPromise = (async () => {
+      await this.stop({ forRestart: true });
+      if (token.cancelled || !shouldStart()) {
+        return { ok: false, cancelled: true, error: 'CV restart cancelled by scheduler transition' };
+      }
+      return this.start();
+    })().finally(() => {
+      if (this._maintenanceRestart === token) this._maintenanceRestart = null;
+      this._restartPromise = null;
+    });
+    return this._restartPromise;
+  }
+
   reload(config) {
     this.config = config;
     this.cvConfig = config.cv || {};
     this.camerasConfig = config.cameras || [];
-    // Para aplicar mudanças: chamar stop() depois start()
+    // Para aplicar mudanças: chamar stop() seguido de start().
   }
 
   /**
@@ -1128,6 +1152,7 @@ class CVManager extends EventEmitter {
       ? `rtsp://${user}:${pass}@${cam.ip}:554/cam/realmonitor?channel=1&subtype=0`
       : null;
 
+    const counterModel = cfg.model || this.cvConfig.counter?.model || this.cvConfig.model || 'yolo11n';
     const args = [
       path.join(CV_DIR, 'counter.py'),
       '--mode', role,
@@ -1135,7 +1160,7 @@ class CVManager extends EventEmitter {
       '--line', cfg.line || '500,480,1400,480',
       '--confidence', String(cfg.confidence ?? 0.45),
       '--interval', String(cfg.interval ?? 0.5),
-      '--model', this.cvConfig.model || 'yolo11n',
+      '--model', counterModel,
     ];
     if (rtspUrl) args.push('--rtsp', rtspUrl);
     if (configPath) args.push('--config', configPath);
@@ -1191,13 +1216,14 @@ class CVManager extends EventEmitter {
       ? `rtsp://${user}:${pass}@${cam.ip}:554/cam/realmonitor?channel=1&subtype=0`
       : null;
 
+    const counterModel = counterCfg.model || this.cvConfig.counter?.model || this.cvConfig.model || 'yolo11n';
     const args = [
       path.join(CV_DIR, 'counter.py'),
       '--gpu', String(this.cvConfig.gpu ?? 0),
       '--line', counterCfg.line || '500,480,1400,480',
       '--confidence', String(counterCfg.confidence ?? 0.45),
       '--interval', String(counterCfg.interval ?? 0.5),
-      '--model', this.cvConfig.model || 'yolo11n',
+      '--model', counterModel,
     ];
 
     if (rtspUrl) args.push('--rtsp', rtspUrl);

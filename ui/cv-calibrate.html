@@ -86,6 +86,15 @@
     .line-cam { font-size: 11px; color: var(--text-dimmer); margin-bottom: 4px; }
     .line-coords { font-size: 11px; font-family: 'JetBrains Mono', monospace; color: var(--text-dim); margin-bottom: 6px; }
     .line-coords.set { color: var(--amber); }
+    .line-role-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+    .line-role-btn {
+      padding: 6px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      background: var(--bg); color: var(--text-dim); cursor: pointer; font: inherit; font-size: 11px;
+    }
+    .line-role-btn.active { border-color: var(--amber); color: var(--amber); background: rgba(245,158,11,.08); }
+    .counter-toggle { display: flex; align-items: center; gap: 7px; margin: 9px 0; font-size: 11px; color: var(--text-dim); }
+    .line-summary { margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--border); font-size: 10px; color: var(--text-dimmer); line-height: 1.55; }
+    .line-summary .ready { color: var(--green); }
 
     /* Tool selector */
     .tool-row { display: flex; gap: 6px; margin-bottom: 12px; }
@@ -181,15 +190,24 @@
       </div>
 
       <div id="line-panel" style="display:none;">
-        <div class="section-label">Linha de contagem</div>
+        <div class="section-label">Acessos bidirecionais</div>
+        <div class="line-role-row">
+          <button class="line-role-btn active" id="line-role-entry" onclick="selectLineRole('entry')">Acesso A</button>
+          <button class="line-role-btn" id="line-role-exit" onclick="selectLineRole('exit')">Acesso B</button>
+        </div>
         <div class="line-box">
           <div class="line-cam" id="line-cam">—</div>
           <div class="line-coords" id="line-coords">não configurada</div>
-          <button class="btn-xs clear" onclick="clearLine()" style="margin-top:4px;">Limpar</button>
+          <button class="btn-xs clear" onclick="clearLine()" style="margin-top:4px;">Limpar acesso selecionado</button>
+          <div class="line-summary" id="line-summary"></div>
         </div>
+        <label class="counter-toggle">
+          <input type="checkbox" id="counter-enabled" onchange="setCounterEnabled(this.checked)">
+          Ativar contador após salvar
+        </label>
         <div style="font-size:11px;color:var(--text-dimmer);line-height:1.5;">
-          Clique em 2 pontos para definir a linha.<br>
-          Cima→baixo = <span style="color:var(--green)">entrada</span> · Baixo→cima = <span style="color:var(--red)">saída</span>
+          Escolha um acesso e clique em 2 pontos na soleira.<br>
+          A seta perpendicular indica o lado de <span style="color:var(--green)">entrada</span>; inverta P1/P2 para inverter o sentido.
         </div>
       </div>
 
@@ -233,10 +251,16 @@ const COLORS = ['#3b82f6','#22c55e','#f59e0b','#ec4899','#8b5cf6','#06b6d4','#f9
 // ── Estado ─────────────────────────────────────────────────────────────────
 let config = {};
 let currentCam = null;
+let frameRequestId = 0;
 let currentTool = 'zone';
 let activeZoneId = null;
 let drawing = [];      // pontos em construção (zona)
-let linePoints = [];   // pontos da linha (max 2)
+let linePoints = [];   // pontos da linha ativa (max 2)
+let activeLineRole = 'entry'; // entry=Acesso A, exit=Acesso B (ambos bidirecionais)
+const LINE_ROLES = {
+  entry: { label: 'Acesso A', color: '#f59e0b' },
+  exit:  { label: 'Acesso B', color: '#ec4899' },
+};
 
 // ── Init ───────────────────────────────────────────────────────────────────
 async function init() {
@@ -279,20 +303,39 @@ function refreshFrame() {
   if (!currentCam) return;
   const img = document.getElementById('cam-frame');
   const noFrame = document.getElementById('no-frame');
-  const url = `/api/cv/${currentCam}/frame?t=${Date.now()}`;
-  const tmp = new Image();
-  tmp.onload = () => {
-    img.src = url;
-    img.style.display = '';
-    noFrame.style.display = 'none';
-    resizeCanvas();
-    renderOverlay();
+  const requestedCam = currentCam;
+  const requestId = ++frameRequestId;
+  img.style.display = 'none';
+  noFrame.style.display = 'flex';
+  noFrame.textContent = `${requestedCam}: carregando frame...`;
+  // Snapshot HD funciona mesmo com o CV parado (ex.: segunda-feira fechada).
+  const urls = [
+    `/api/cameras/${requestedCam}/snapshot?hd=1&t=${Date.now()}`,
+    `/api/cv/${requestedCam}/frame?t=${Date.now()}`,
+  ];
+  const trySource = index => {
+    if (requestId !== frameRequestId || currentCam !== requestedCam) return;
+    if (index >= urls.length) {
+      noFrame.style.display = 'flex';
+      noFrame.textContent = `${currentCam}: câmera sem frame`;
+      return;
+    }
+    const tmp = new Image();
+    tmp.onload = () => {
+      if (requestId !== frameRequestId || currentCam !== requestedCam) return;
+      img.src = urls[index];
+      img.style.display = '';
+      noFrame.style.display = 'none';
+      resizeCanvas();
+      renderOverlay();
+    };
+    tmp.onerror = () => {
+      if (requestId !== frameRequestId || currentCam !== requestedCam) return;
+      trySource(index + 1);
+    };
+    tmp.src = urls[index];
   };
-  tmp.onerror = () => {
-    noFrame.style.display = 'flex';
-    noFrame.textContent = `${currentCam}: sem frame (detector iniciando...)`;
-  };
-  tmp.src = url;
+  trySource(0);
 }
 
 // ── Canvas ─────────────────────────────────────────────────────────────────
@@ -384,13 +427,21 @@ function removeCamFromZone(zoneId, camId) {
 }
 
 // ── Linha ──────────────────────────────────────────────────────────────────
+function ensureDualCounter() {
+  if (!config.cv.counter) config.cv.counter = {};
+  config.cv.counter.mode = 'dual';
+  if (!config.cv.counter.entry) config.cv.counter.entry = {};
+  if (!config.cv.counter.exit) config.cv.counter.exit = {};
+  return config.cv.counter;
+}
+
 function clickLine(fx, fy) {
   linePoints.push([fx, fy]);
   renderOverlay();
   if (linePoints.length === 2) {
-    if (!config.cv.counter) config.cv.counter = {};
-    config.cv.counter.camera = currentCam;
-    config.cv.counter.line = linePoints.map(p => p.join(',')).join(',');
+    const counter = ensureDualCounter();
+    counter[activeLineRole].camera = currentCam;
+    counter[activeLineRole].line = linePoints.map(p => p.join(',')).join(',');
     linePoints = [];
     renderLine();
     renderOverlay();
@@ -398,10 +449,31 @@ function clickLine(fx, fy) {
   }
 }
 
+function selectLineRole(role) {
+  activeLineRole = role;
+  linePoints = [];
+  document.getElementById('line-role-entry').classList.toggle('active', role === 'entry');
+  document.getElementById('line-role-exit').classList.toggle('active', role === 'exit');
+  const cfg = config.cv?.counter?.[role];
+  if (cfg?.camera) selectCam(cfg.camera);
+  renderLine(); renderOverlay(); updateHint();
+}
+
+function setCounterEnabled(enabled) {
+  const counter = ensureDualCounter();
+  counter.enabled = enabled;
+  counter.model = counter.model || 'yolo11l';
+  for (const role of ['entry', 'exit']) {
+    counter[role].confidence = counter[role].confidence ?? 0.2;
+    counter[role].interval = counter[role].interval ?? 0.25;
+  }
+}
+
 function clearLine() {
-  if (config.cv?.counter) {
-    delete config.cv.counter.line;
-    delete config.cv.counter.camera;
+  const target = config.cv?.counter?.[activeLineRole];
+  if (target) {
+    delete target.line;
+    delete target.camera;
   }
   linePoints = [];
   renderLine();
@@ -502,14 +574,14 @@ function renderOverlay() {
     });
   }
 
-  // Linha de contagem
-  const lineStr = config.cv?.counter?.line;
-  const lineCam = config.cv?.counter?.camera;
-  if (lineStr && lineCam === currentCam) {
-    const [x1, y1, x2, y2] = lineStr.split(',').map(Number);
+  // Duas linhas de acesso, ambas bidirecionais.
+  for (const [role, meta] of Object.entries(LINE_ROLES)) {
+    const cfg = config.cv?.counter?.[role];
+    if (!cfg?.line || cfg.camera !== currentCam) continue;
+    const [x1, y1, x2, y2] = cfg.line.split(',').map(Number);
     const [cx1, cy1] = f2c(x1, y1);
     const [cx2, cy2] = f2c(x2, y2);
-    drawLine(ctx, cx1, cy1, cx2, cy2, '#f59e0b');
+    drawLine(ctx, cx1, cy1, cx2, cy2, meta.color, meta.label, role === activeLineRole);
   }
   if (linePoints.length === 1) {
     const [cx, cy] = f2c(linePoints[0][0], linePoints[0][1]);
@@ -518,8 +590,8 @@ function renderOverlay() {
   }
 }
 
-function drawLine(ctx, x1, y1, x2, y2, color) {
-  ctx.strokeStyle = color; ctx.lineWidth = 2;
+function drawLine(ctx, x1, y1, x2, y2, color, label, active = false) {
+  ctx.strokeStyle = color; ctx.lineWidth = active ? 3 : 2;
   ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
   [[x1,y1],[x2,y2]].forEach(([x,y]) => {
     ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI*2);
@@ -536,7 +608,7 @@ function drawLine(ctx, x1, y1, x2, y2, color) {
   // Label
   ctx.fillStyle = color; ctx.font = '11px Inter, sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('entrada ↓', mx, my - 12);
+  ctx.fillText(`${label} · seta = entrada`, mx, my - 12);
 }
 
 // ── Zone list render ───────────────────────────────────────────────────────
@@ -617,12 +689,19 @@ function renderZoneList() {
 }
 
 function renderLine() {
-  const line = config.cv?.counter?.line;
-  const cam = config.cv?.counter?.camera;
-  document.getElementById('line-cam').textContent = cam ? `Câmera: ${cam}` : 'câmera: —';
+  const counter = config.cv?.counter || {};
+  const cfg = counter[activeLineRole] || {};
+  const meta = LINE_ROLES[activeLineRole];
+  document.getElementById('line-cam').textContent = `${meta.label} · ${cfg.camera ? `câmera ${cfg.camera}` : 'câmera —'}`;
   const el = document.getElementById('line-coords');
-  el.textContent = line || 'não configurada';
-  el.className = 'line-coords' + (line ? ' set' : '');
+  el.textContent = cfg.line || 'não configurada';
+  el.className = 'line-coords' + (cfg.line ? ' set' : '');
+  document.getElementById('counter-enabled').checked = !!counter.enabled;
+  document.getElementById('line-summary').innerHTML = Object.entries(LINE_ROLES).map(([role, item]) => {
+    const lineCfg = counter[role] || {};
+    const ready = !!(lineCfg.camera && lineCfg.line);
+    return `<div class="${ready ? 'ready' : ''}">${item.label}: ${ready ? `${lineCfg.camera} · ${lineCfg.line}` : 'pendente'}</div>`;
+  }).join('');
 }
 
 // ── Zone management ────────────────────────────────────────────────────────
@@ -725,36 +804,73 @@ function updateHint() {
 }
 
 // ── Salvar ─────────────────────────────────────────────────────────────────
+function validAccessLine(unit) {
+  const cameraIds = new Set((config.cameras || []).map(camera => camera.id));
+  if (!unit || !cameraIds.has(unit.camera) || typeof unit.line !== 'string') return false;
+  const tokens = unit.line.split(',').map(value => value.trim());
+  if (tokens.length !== 4 || tokens.some(value => !/^\d+$/.test(value))) return false;
+  const values = tokens.map(Number);
+  const [x1, y1, x2, y2] = values;
+  if ([x1, x2].some(x => x < 0 || x > FRAME_W) || [y1, y2].some(y => y < 0 || y > FRAME_H)) return false;
+  return Math.hypot(x2 - x1, y2 - y1) >= 10;
+}
+
+async function putConfig(value) {
+  return fetch('/api/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(value),
+  });
+}
+
 async function saveConfig() {
   const btn = document.querySelector('.btn.primary');
   btn.disabled = true; btn.textContent = 'Salvando...';
   try {
-    const r = await fetch('/api/config', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(config),
-    });
+    const counter = config.cv?.counter || {};
+    if (counter.enabled && counter.mode === 'dual') {
+      const invalid = ['entry', 'exit'].filter(role => !validAccessLine(counter[role]));
+      if (invalid.length) throw new Error('Desenhe linhas válidas para os acessos A e B antes de ativar o contador.');
+    }
+
+    // Calibration writes are deliberately maintenance-only. The server also
+    // guards transitions, but checking first gives a useful operator message.
+    const scheduleResponse = await fetch('/api/schedule');
+    if (!scheduleResponse.ok) throw new Error(await scheduleResponse.text());
+    const schedule = await scheduleResponse.json();
+    const status = schedule?.data || {};
+    const stableClosed = status.state === 'closed'
+      && status.desiredState === 'closed'
+      && !status.transition
+      && (status.pendingTransitions?.length || 0) === 0;
+    if (!stableClosed) throw new Error('A calibração só pode ser salva com a exposição fechada e sem transição em andamento.');
+
+    const r = await putConfig(config);
     if (!r.ok) throw new Error(await r.text());
 
-    // Reinicia os detectores automaticamente para aplicar as novas zonas
-    btn.textContent = 'Reiniciando detectores...';
-    await fetch('/api/cv/stop', { method: 'POST' });
-    await new Promise(r => setTimeout(r, 2000));
-    await fetch('/api/cv/start', { method: 'POST' });
-
     const msg = document.getElementById('save-msg');
-    msg.textContent = '✓ Salvo e detectores reiniciados';
+    msg.textContent = '✓ Salvo; será aplicado na próxima abertura';
     msg.style.display = 'inline';
-    setTimeout(() => { msg.style.display = 'none'; msg.textContent = '✓ Salvo'; }, 4000);
+    setTimeout(() => { msg.style.display = 'none'; msg.textContent = '✓ Salvo'; }, 5000);
   } catch(e) { alert('Erro: ' + e.message); }
   finally { btn.disabled = false; btn.textContent = 'Salvar configuração'; }
 }
 
 async function reloadDetectors() {
-  await fetch('/api/cv/stop', { method: 'POST' });
-  await new Promise(r => setTimeout(r, 1500));
-  await fetch('/api/cv/start', { method: 'POST' });
-  alert('Detectores reiniciados.');
+  try {
+    const scheduleResponse = await fetch('/api/schedule');
+    if (!scheduleResponse.ok) throw new Error(await scheduleResponse.text());
+    const schedule = await scheduleResponse.json();
+    if (schedule?.data?.desiredState !== 'open') {
+      alert('Exposição fechada: a configuração será aplicada automaticamente na próxima abertura.');
+      return;
+    }
+    const response = await fetch('/api/cv/restart', { method: 'POST' });
+    if (!response.ok) throw new Error(await response.text());
+    alert('CV reiniciado sem alterar projetores ou áudio.');
+  } catch (error) {
+    alert('Erro: ' + error.message);
+  }
 }
 
 // ── Utils ──────────────────────────────────────────────────────────────────
