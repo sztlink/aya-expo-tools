@@ -42,7 +42,7 @@ test('allows incomplete calibration while counter remains disabled', () => {
   assert.equal(validateCvCalibration(config).ok, true);
 });
 
-function configRouteFixture(state) {
+function configRouteFixture(state, desiredState = state) {
   const puts = new Map();
   const app = { get() {}, post() {}, put(path, handler) { puts.set(path, handler); } };
   const config = base();
@@ -50,8 +50,8 @@ function configRouteFixture(state) {
   registerConfigRoutes(app, {
     config,
     configName: 'test',
-    scheduler: { getStatus: () => ({ state, desiredState: state, transition: null, pendingTransitions: [] }), updateConfig() {} },
-    cvManager: { reload() {} },
+    scheduler: { getStatus: () => ({ state, desiredState, transition: null, pendingTransitions: [] }), updateConfig() {} },
+    cvManager: { reload() {}, getStatus: () => ({ running: false }) },
   });
   return { config, handler: puts.get('/api/config') };
 }
@@ -74,6 +74,18 @@ test('blocks CV config changes while exhibition is open', (t) => {
   fixture.handler({ body: updated }, res);
   assert.equal(res.statusCode, 409);
   assert.equal(res.body.code, 'CV_MAINTENANCE_WINDOW_REQUIRED');
+});
+
+test('accepts valid CV config changes while closed-day equipment is degraded', (t) => {
+  let writes = 0;
+  t.mock.method(fs, 'writeFileSync', () => { writes++; });
+  const fixture = configRouteFixture('degraded', 'closed');
+  const updated = structuredClone(fixture.config);
+  updated.cv.counter.model = 'yolov8l';
+  const res = response();
+  fixture.handler({ body: updated }, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(writes, 1);
 });
 
 test('accepts valid CV config changes while exhibition is closed', (t) => {

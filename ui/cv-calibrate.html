@@ -839,8 +839,7 @@ async function saveConfig() {
     if (!scheduleResponse.ok) throw new Error(await scheduleResponse.text());
     const schedule = await scheduleResponse.json();
     const status = schedule?.data || {};
-    const stableClosed = status.state === 'closed'
-      && status.desiredState === 'closed'
+    const stableClosed = status.desiredState === 'closed'
       && !status.transition
       && (status.pendingTransitions?.length || 0) === 0;
     if (!stableClosed) throw new Error('A calibração só pode ser salva com a exposição fechada e sem transição em andamento.');

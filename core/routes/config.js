@@ -31,10 +31,14 @@ module.exports = function(app, { config, configName, configPath, projectors, cam
           && operational.state === operational.desiredState
           && noTransition;
         const cvChanged = JSON.stringify(updated?.cv ?? null) !== JSON.stringify(config?.cv ?? null);
-        const cvMaintenanceWindow = operational.state === 'closed'
-          && operational.desiredState === 'closed'
-          && noTransition;
-        if (!stable || (cvChanged && !cvMaintenanceWindow)) {
+        const cvRuntime = cvManager?.getStatus?.();
+        // A closed-day boot may be degraded only because powered-down projectors
+        // cannot answer PJLink. CV maintenance is still safe when desired state is
+        // closed, no transition is queued, and no CV worker is running.
+        const cvMaintenanceWindow = operational.desiredState === 'closed'
+          && noTransition
+          && cvRuntime?.running !== true;
+        if ((cvChanged && !cvMaintenanceWindow) || (!cvChanged && !stable)) {
           return res.status(409).json({
             ok: false,
             error: cvChanged
