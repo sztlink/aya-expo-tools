@@ -8,7 +8,7 @@ const net = require('net');
 const crypto = require('crypto');
 
 const PJLINK_PORT = 4352;
-const TIMEOUT = 5000;
+const TIMEOUT = 4000;
 
 // PJLink Class 1 Commands
 const COMMANDS = {
@@ -57,6 +57,7 @@ function sendCommand(ip, command, password = '', port = PJLINK_PORT) {
     let authenticated = false;
     let timer;
     let settled = false;
+    let phase = 'connect';
 
     const finishResolve = value => {
       if (settled) return;
@@ -74,11 +75,11 @@ function sendCommand(ip, command, password = '', port = PJLINK_PORT) {
     };
 
     timer = setTimeout(() => {
-      finishReject(new Error(`Timeout connecting to ${ip}:${port}`));
+      finishReject(new Error(`PJLink timeout waiting for ${phase} from ${ip}:${port}`));
     }, TIMEOUT);
 
     socket.connect(port, ip, () => {
-      // Wait for greeting
+      phase = 'greeting';
     });
 
     socket.on('data', (data) => {
@@ -95,6 +96,7 @@ function sendCommand(ip, command, password = '', port = PJLINK_PORT) {
           // No auth
           authenticated = true;
           buffer = '';
+          phase = 'response';
           socket.write(command);
         } else if (greeting.startsWith('PJLINK 1')) {
           // Auth required
@@ -104,6 +106,7 @@ function sendCommand(ip, command, password = '', port = PJLINK_PORT) {
             .digest('hex');
           authenticated = true;
           buffer = '';
+          phase = 'response';
           socket.write(hash + command);
         } else if (greeting.includes('PJLINK ERRA')) {
           finishReject(new Error('Authentication error'));
@@ -159,6 +162,12 @@ class Projector {
     this.defaultInput = config.input || 'HDMI1';
     this.password = config.password || '';
     this.port = config.port || PJLINK_PORT;
+    const retryAttempts = Number(config.retryAttempts);
+    const retryDelayMs = Number(config.retryDelayMs);
+    this.retryAttempts = Number.isFinite(retryAttempts) && retryAttempts >= 1 ? Math.floor(retryAttempts) : 2;
+    this.retryDelayMs = Number.isFinite(retryDelayMs) && retryDelayMs >= 0 ? retryDelayMs : 250;
+    this._commandTail = Promise.resolve();
+    this._operationTail = Promise.resolve();
 
     // Cached state
     this.state = {
@@ -174,45 +183,82 @@ class Projector {
     };
   }
 
-  async send(command) {
-    try {
-      const result = await sendCommand(this.ip, command, this.password, this.port);
-      this.state.online = true;
-      this.state.lastUpdate = new Date().toISOString();
-      return result;
-    } catch (err) {
-      this.state.online = false;
-      this.state.lastUpdate = new Date().toISOString();
-      throw err;
-    }
+  send(command) {
+    // Keep one command in flight per projector while preserving parallelism
+    // across independent projectors.
+    const operation = this._commandTail
+      .catch(() => {})
+      .then(() => this._sendWithRetry(command));
+    this._commandTail = operation.catch(() => {});
+    return operation;
   }
 
-  async powerOn() {
+  async _sendWithRetry(command) {
+    let lastError;
+    for (let attempt = 1; attempt <= this.retryAttempts; attempt++) {
+      try {
+        const result = await sendCommand(this.ip, command, this.password, this.port);
+        this.state.online = true;
+        this.state.lastUpdate = new Date().toISOString();
+        return result;
+      } catch (err) {
+        lastError = err;
+        if (attempt < this.retryAttempts && this.retryDelayMs > 0) {
+          await new Promise(resolve => setTimeout(resolve, this.retryDelayMs * attempt));
+        }
+      }
+    }
+    this.state.online = false;
+    this.state.lastUpdate = new Date().toISOString();
+    throw lastError;
+  }
+
+  _enqueueOperation(fn) {
+    const operation = this._operationTail
+      .catch(() => {})
+      .then(fn);
+    this._operationTail = operation.catch(() => {});
+    return operation;
+  }
+
+  powerOn() {
+    return this._enqueueOperation(() => this._powerOnCommand());
+  }
+
+  async _powerOnCommand() {
     const r = await this.send(COMMANDS.POWER_ON);
     if (r.ok) this.state.power = 'warmup';
     return r;
   }
 
-  async powerOff() {
+  powerOff() {
+    return this._enqueueOperation(() => this._powerOffCommand());
+  }
+
+  async _powerOffCommand() {
     const r = await this.send(COMMANDS.POWER_OFF);
     if (r.ok) this.state.power = 'cooling';
     return r;
   }
 
-  async ensurePowerOn() {
-    const power = await this.getPower();
-    if (power === 'on' || power === 'warmup') {
-      return { ok: true, noOp: true, power };
-    }
-    return this.powerOn();
+  ensurePowerOn() {
+    return this._enqueueOperation(async () => {
+      const power = await this.getPower();
+      if (power === 'on' || power === 'warmup') {
+        return { ok: true, noOp: true, power };
+      }
+      return this._powerOnCommand();
+    });
   }
 
-  async ensurePowerOff() {
-    const power = await this.getPower();
-    if (power === 'off' || power === 'cooling') {
-      return { ok: true, noOp: true, power };
-    }
-    return this.powerOff();
+  ensurePowerOff() {
+    return this._enqueueOperation(async () => {
+      const power = await this.getPower();
+      if (power === 'off' || power === 'cooling') {
+        return { ok: true, noOp: true, power };
+      }
+      return this._powerOffCommand();
+    });
   }
 
   async getPower() {
@@ -270,20 +316,22 @@ class Projector {
   /**
    * Full status poll — queries power, input, lamp, errors
    */
-  async poll() {
-    try {
-      await this.getPower();
-      if (this.state.power === 'on') {
-        await this.getInput();
-        await this.getLamp();
+  poll() {
+    return this._enqueueOperation(async () => {
+      try {
+        await this.getPower();
+        if (this.state.power === 'on') {
+          await this.getInput();
+          await this.getLamp();
+        }
+        this.state.online = true;
+      } catch (err) {
+        this.state.online = false;
+        this.state.power = 'unreachable';
       }
-      this.state.online = true;
-    } catch (err) {
-      this.state.online = false;
-      this.state.power = 'unreachable';
-    }
-    this.state.lastUpdate = new Date().toISOString();
-    return this.getStatus();
+      this.state.lastUpdate = new Date().toISOString();
+      return this.getStatus();
+    });
   }
 
   getStatus() {
@@ -306,12 +354,15 @@ class ProjectorManager {
     this.projectors = new Map();
     this.pjlinkConfig = config.pjlink || {};
     this.pollTimer = null;
+    this._pollPromise = null;
 
     for (const p of config.projectors || []) {
       const proj = new Projector({
         ...p,
         password: p.password || this.pjlinkConfig.password || '',
         port: p.port || this.pjlinkConfig.port || PJLINK_PORT,
+        retryAttempts: p.retryAttempts ?? this.pjlinkConfig.retryAttempts,
+        retryDelayMs: p.retryDelayMs ?? this.pjlinkConfig.retryDelayMs,
       });
       this.projectors.set(p.id, proj);
     }
@@ -325,15 +376,16 @@ class ProjectorManager {
     return Array.from(this.projectors.values());
   }
 
-  async pollAll() {
-    const results = await Promise.allSettled(
-      this.all().map(p => p.poll())
-    );
-    return results.map((r, i) => {
-      if (r.status === 'fulfilled') return r.value;
-      const p = this.all()[i];
-      return { ...p.getStatus(), error: r.reason?.message };
-    });
+  pollAll() {
+    if (this._pollPromise) return this._pollPromise;
+    const projectors = this.all();
+    this._pollPromise = Promise.allSettled(projectors.map(p => p.poll()))
+      .then(results => results.map((result, index) => {
+        if (result.status === 'fulfilled') return result.value;
+        return { ...projectors[index].getStatus(), error: result.reason?.message };
+      }))
+      .finally(() => { this._pollPromise = null; });
+    return this._pollPromise;
   }
 
   async powerOnAll() {
@@ -348,15 +400,32 @@ class ProjectorManager {
     const wasPolling = !!this.pollTimer;
     this.stopPolling();
     this.pjlinkConfig = config.pjlink || {};
-    this.projectors.clear();
+    const previous = this.projectors;
+    const next = new Map();
     for (const p of config.projectors || []) {
-      const proj = new Projector({
-        ...p,
-        password: p.password || this.pjlinkConfig.password || '',
-        port: p.port || this.pjlinkConfig.port || PJLINK_PORT,
-      });
-      this.projectors.set(p.id, proj);
+      const port = p.port || this.pjlinkConfig.port || PJLINK_PORT;
+      const existing = previous.get(p.id);
+      if (existing && existing.ip === p.ip && existing.port === port) {
+        existing.name = p.name;
+        existing.model = p.model || '';
+        existing.defaultInput = p.input || 'HDMI1';
+        existing.password = p.password || this.pjlinkConfig.password || '';
+        const attempts = Number(p.retryAttempts ?? this.pjlinkConfig.retryAttempts);
+        const delay = Number(p.retryDelayMs ?? this.pjlinkConfig.retryDelayMs);
+        existing.retryAttempts = Number.isFinite(attempts) && attempts >= 1 ? Math.floor(attempts) : 2;
+        existing.retryDelayMs = Number.isFinite(delay) && delay >= 0 ? delay : 250;
+        next.set(p.id, existing);
+      } else {
+        next.set(p.id, new Projector({
+          ...p,
+          password: p.password || this.pjlinkConfig.password || '',
+          port,
+          retryAttempts: p.retryAttempts ?? this.pjlinkConfig.retryAttempts,
+          retryDelayMs: p.retryDelayMs ?? this.pjlinkConfig.retryDelayMs,
+        }));
+      }
     }
+    this.projectors = next;
     if (wasPolling) this.startPolling();
     console.log(`[PJLink] Reloaded — ${this.projectors.size} projetores`);
   }

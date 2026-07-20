@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node index.js --dev",
-    "test": "node --test test/cluster-contract.test.js test/cv-calibration-config.test.js test/config-loader.test.js test/equipment-cluster.test.js test/resilience-scheduler.test.js test/resilience-lifecycle.test.js test/resilience-cv.test.js test/resilience-cv-routes.test.js test/resilience-routes.test.js test/resilience-runtime-tools.test.js test/resilience-liveness.test.js test/resilience-equipment.test.js",
+    "test": "node --test test/cluster-contract.test.js test/async-folder-size.test.js test/cv-calibration-config.test.js test/config-loader.test.js test/equipment-cluster.test.js test/resilience-scheduler.test.js test/resilience-lifecycle.test.js test/resilience-cv.test.js test/resilience-cv-routes.test.js test/resilience-routes.test.js test/resilience-runtime-tools.test.js test/resilience-liveness.test.js test/resilience-equipment.test.js",
     "manifest": "node scripts/release-manifest.js --write",
     "package:release": "node scripts/build-release-package.js"
   },

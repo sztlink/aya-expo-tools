@@ -53,7 +53,7 @@ module.exports = function(app, cluster) {
     try {
       const p = projectors.get(req.params.id);
       if (!p) return res.status(404).json({ ok: false, error: 'Projector not found', code: 'PROJECTOR_NOT_FOUND' });
-      await p.powerOn();
+      await p.ensurePowerOn();
       setTimeout(() => p.poll().then(s => cluster.broadcast('projector', s)), 3000);
       res.json({ ok: true, data: { id: p.id, action: 'power-on' } });
     } catch (err) {
@@ -65,7 +65,7 @@ module.exports = function(app, cluster) {
     try {
       const p = projectors.get(req.params.id);
       if (!p) return res.status(404).json({ ok: false, error: 'Projector not found', code: 'PROJECTOR_NOT_FOUND' });
-      await p.powerOff();
+      await p.ensurePowerOff();
       setTimeout(() => p.poll().then(s => cluster.broadcast('projector', s)), 3000);
       res.json({ ok: true, data: { id: p.id, action: 'power-off' } });
     } catch (err) {

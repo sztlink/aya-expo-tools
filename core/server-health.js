@@ -13,6 +13,7 @@ const { execFile } = require('child_process')
 const os = require('os')
 const fs = require('fs')
 const path = require('path')
+const { getFolderSizes } = require('./async-folder-size')
 
 // ── Config ───────────────────────────────────────────────────
 
@@ -47,6 +48,9 @@ let _prevCpuTotal = 0
 let _alerts = []     // { type, message, timestamp, value, threshold }
 let _storage = null  // folder sizes, refreshed every 5min
 let _storageLastPoll = 0
+let _storageRefreshPromise = null
+let _storageGeneration = 0
+let _running = false
 const STORAGE_POLL_INTERVAL = 300_000  // 5min
 let _status = {
   startedAt: null,
@@ -181,40 +185,21 @@ function getDisk() {
 
 // ── Folder Sizes ─────────────────────────────────────────────
 
-function getFolderSizes() {
-  const result = {}
-  for (const [name, dirPath] of Object.entries(TRACKED_FOLDERS)) {
-    try {
-      result[name] = getDirSize(dirPath)
-    } catch {
-      result[name] = { bytes: 0, mb: 0, files: 0 }
-    }
-  }
-  return result
-}
-
-function getDirSize(dirPath) {
-  let totalBytes = 0
-  let totalFiles = 0
-
-  try {
-    const entries = fs.readdirSync(dirPath, { withFileTypes: true })
-    for (const entry of entries) {
-      const fullPath = path.join(dirPath, entry.name)
-      if (entry.isDirectory()) {
-        const sub = getDirSize(fullPath)
-        totalBytes += sub.bytes
-        totalFiles += sub.files
-      } else if (entry.isFile()) {
-        try {
-          totalBytes += fs.statSync(fullPath).size
-          totalFiles++
-        } catch { /* skip */ }
-      }
-    }
-  } catch { /* dir doesn't exist */ }
-
-  return { bytes: totalBytes, mb: Math.round(totalBytes / 1024 / 1024), files: totalFiles }
+function refreshStorageInBackground() {
+  if (_storageRefreshPromise) return _storageRefreshPromise
+  const generation = _storageGeneration
+  _storageLastPoll = Date.now()
+  _storageRefreshPromise = getFolderSizes(TRACKED_FOLDERS)
+    .then(storage => {
+      if (_running && generation === _storageGeneration) _storage = storage
+      return storage
+    })
+    .catch(err => {
+      console.error('[server-health] async storage scan error:', err.message)
+      return _storage
+    })
+    .finally(() => { _storageRefreshPromise = null })
+  return _storageRefreshPromise
 }
 
 // ── Processos ────────────────────────────────────────────────
@@ -367,11 +352,12 @@ async function poll() {
     const cpu = getCpuUsage()
     const ram = getRam()
 
-    // Storage: refresh every 5min (expensive I/O)
+    // Storage scanning is intentionally detached from the health poll. The old
+    // synchronous recursion blocked Node for 8-11s and caused false PJLink
+    // timeouts. Single-flight async I/O keeps the control plane responsive.
     const now = Date.now()
-    if (!_storage || now - _storageLastPoll >= STORAGE_POLL_INTERVAL) {
-      _storage = getFolderSizes()
-      _storageLastPoll = now
+    if (!_storageRefreshPromise && (!_storage || now - _storageLastPoll >= STORAGE_POLL_INTERVAL)) {
+      void refreshStorageInBackground()
     }
 
     const data = {
@@ -432,6 +418,8 @@ module.exports = {
    * @param {number} [interval] — ms between polls (default 30s)
    */
   start(interval = POLL_INTERVAL) {
+    _running = true
+    _storageGeneration++
     _status.startedAt = new Date().toISOString()
     _status.intervalMs = interval
 
@@ -448,6 +436,8 @@ module.exports = {
 
   /** Stop polling */
   stop() {
+    _running = false
+    _storageGeneration++
     if (_pollTimer) {
       clearInterval(_pollTimer)
       _pollTimer = null
@@ -485,6 +475,8 @@ module.exports = {
       alerts: _alerts.length,
       historyPoints: _history.length,
       logDate: _logDate,
+      storageScanRunning: !!_storageRefreshPromise,
+      storageLastPollAt: _storageLastPoll ? new Date(_storageLastPoll).toISOString() : null,
     }
   },
 

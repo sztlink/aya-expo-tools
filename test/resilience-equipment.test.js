@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const net = require('net');
 const equipment = require('../clusters/equipment');
-const { Projector } = require('../clusters/equipment/pjlink');
+const { Projector, ProjectorManager } = require('../clusters/equipment/pjlink');
 
 test('PJLink rejects when the projector closes before returning a command response', async (t) => {
   const server = net.createServer(socket => {
@@ -14,7 +14,7 @@ test('PJLink rejects when the projector closes before returning a command respon
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
 
-  const projector = new Projector({ id: 'test', ip: '127.0.0.1', port: server.address().port });
+  const projector = new Projector({ id: 'test', ip: '127.0.0.1', port: server.address().port, retryAttempts: 1 });
   await assert.rejects(
     Promise.race([
       projector.powerOn(),
@@ -22,6 +22,93 @@ test('PJLink rejects when the projector closes before returning a command respon
     ]),
     /Connection closed before PJLink response/,
   );
+});
+
+test('PJLink serializes concurrent commands per projector', async (t) => {
+  let active = 0;
+  let maxActive = 0;
+  const server = net.createServer(socket => {
+    active++;
+    maxActive = Math.max(maxActive, active);
+    socket.write('PJLINK 0\r');
+    socket.once('data', () => setTimeout(() => {
+      socket.end('%1POWR=0\r');
+      active--;
+    }, 40));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+
+  const projector = new Projector({
+    id: 'test', ip: '127.0.0.1', port: server.address().port,
+    retryAttempts: 1,
+  });
+  const values = await Promise.all([projector.getPower(), projector.getPower()]);
+  assert.deepEqual(values, ['off', 'off']);
+  assert.equal(maxActive, 1);
+});
+
+test('PJLink retries a transient connection failure', async (t) => {
+  let connections = 0;
+  const server = net.createServer(socket => {
+    connections++;
+    socket.write('PJLINK 0\r');
+    socket.once('data', () => {
+      if (connections === 1) socket.end();
+      else socket.end('%1POWR=0\r');
+    });
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => server.close(resolve)));
+
+  const projector = new Projector({
+    id: 'test', ip: '127.0.0.1', port: server.address().port,
+    retryAttempts: 2, retryDelayMs: 1,
+  });
+  assert.equal(await projector.getPower(), 'off');
+  assert.equal(connections, 2);
+});
+
+test('PJLink serializes opposite power intents so the last request wins', async () => {
+  const projector = new Projector({ id: 'test', ip: '127.0.0.1', retryAttempts: 1 });
+  let power = 'off';
+  projector.getPower = async () => power;
+  projector._powerOnCommand = async () => { await new Promise(resolve => setTimeout(resolve, 10)); power = 'on'; return { ok: true }; };
+  projector._powerOffCommand = async () => { power = 'off'; return { ok: true }; };
+
+  await Promise.all([projector.ensurePowerOn(), projector.ensurePowerOff()]);
+  assert.equal(power, 'off');
+
+  power = 'off';
+  await Promise.all([projector.ensurePowerOn(), projector.powerOff()]);
+  assert.equal(power, 'off', 'direct endpoint command must share the operation queue');
+});
+
+test('PJLink manager coalesces overlapping polls and reuses projector queues on reload', async () => {
+  const config = {
+    pjlink: { retryAttempts: 2, retryDelayMs: 0 },
+    projectors: [{ id: 'proj-1', ip: '127.0.0.1' }],
+  };
+  const manager = new ProjectorManager(config);
+  const projector = manager.get('proj-1');
+  let resolvePoll;
+  let calls = 0;
+  projector.poll = () => {
+    calls++;
+    return new Promise(resolve => { resolvePoll = resolve; });
+  };
+
+  const first = manager.pollAll();
+  const second = manager.pollAll();
+  assert.strictEqual(first, second);
+  assert.equal(calls, 1);
+  resolvePoll(projector.getStatus());
+  await first;
+
+  manager.reload({ ...config, pjlink: { retryAttempts: 3, retryDelayMs: 0 } });
+  assert.strictEqual(manager.get('proj-1'), projector);
+  assert.equal(projector.retryAttempts, 3);
+  assert.equal(projector.retryDelayMs, 0);
 });
 
 test('PJLink power reconciliation is idempotent for already reached states', async () => {
