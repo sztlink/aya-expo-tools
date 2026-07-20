@@ -285,7 +285,7 @@ async function init() {
 
   renderZoneList();
   renderLine();
-  if (cams.length) selectCam(cams[0]);
+  if (cams.length) selectCam(config.cv?.counter?.entry?.camera || cams[0]);
   setInterval(refreshFrame, 2000);
 }
 
@@ -309,11 +309,11 @@ function refreshFrame() {
   img.style.display = 'none';
   noFrame.style.display = 'flex';
   noFrame.textContent = `${requestedCam}: carregando frame...`;
-  // Prefer the detector frame because it matches the 1920x1080 RTSP geometry.
-  // Camera HTTP snapshots are a fallback and may use a 640x480 substream.
+  // Prefer a live HTTP snapshot. Its dimensions may be 640x480, so c2f/f2c
+  // normalize it into the counter's canonical 1920x1080 coordinate space.
   const urls = [
-    `/api/cv/${requestedCam}/frame?t=${Date.now()}`,
     `/api/cameras/${requestedCam}/snapshot?hd=1&t=${Date.now()}`,
+    `/api/cv/${requestedCam}/frame?t=${Date.now()}`,
   ];
   const trySource = index => {
     if (requestId !== frameRequestId || currentCam !== requestedCam) return;
