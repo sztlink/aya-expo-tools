@@ -1,0 +1,144 @@
+{
+  "exhibition": {
+    "name": "Player 1 - Farol Santander",
+    "venue": "Farol Santander",
+    "city": "Sao Paulo",
+    "type": "interativa",
+    "slug": "player1-farol",
+    "projetoId": "cml9tt9qh003speos69expnf5",
+    "network": {
+      "subnet": "192.168.0.0/24",
+      "gateway": "192.168.0.1",
+      "mediaServer": "10.253.0.18",
+      "router": {
+        "model": "TP-Link AX12",
+        "mac": "3C:6A:D2:5E:0D:50",
+        "adminUrl": "http://192.168.0.1",
+        "user": "<<REMOVIDO: ver Vaultwarden>>",
+        "password": ""
+      }
+    }
+  },
+  "modules": {
+    "projectors": true,
+    "cameras": true,
+    "audio": true,
+    "smartplugs": false,
+    "tvs": false,
+    "dmx": false,
+    "resolume": false,
+    "remoteAccess": true
+  },
+  "projectors": [
+    {
+      "id": "proj-drift",
+      "name": "Projetor DRIFT",
+      "ip": "192.168.0.101",
+      "mac": "14:50:51:AD:B4:16",
+      "model": "NEC PE456USL",
+      "input": "HDMI1",
+      "notes": "Projetor DRIFT no Farol (confirmado 14/06 via ARP+PJLink). PJLink 4352 ABERTO sem senha (banner PJLINK 0). Unidade NEC diferente da de 11/06; MAC B4:16. Fixar .101 por MAC no TP-Link."
+    }
+  ],
+  "cameras": [
+    {
+      "id": "cam-1",
+      "name": "Camera 1",
+      "ip": "192.168.0.107",
+      "mac": "80:85:44:6C:68:C6",
+      "model": "Intelbras iMD 3C Black",
+      "user": "<<REMOVIDO: ver Vaultwarden>>",
+      "password": "<<REMOVIDO: ver Vaultwarden>>",
+      "serial": "FJ1M24007238M",
+      "notes": "De volta ao .107 (IP original da BA): o projetor liberou esse IP ao migrar para .104. Confirmado vivo no .107 em 13/06 (MAC 80:85:44 bate)."
+    },
+    {
+      "id": "cam-3",
+      "name": "Camera 3",
+      "ip": "192.168.0.181",
+      "mac": "98:2A:0A:82:0A:8B",
+      "model": "Intelbras iMD 3C Black",
+      "user": "<<REMOVIDO: ver Vaultwarden>>",
+      "password": "<<REMOVIDO: ver Vaultwarden>>"
+    },
+    {
+      "id": "cam-4",
+      "name": "Camera 4",
+      "ip": "192.168.0.200",
+      "mac": "98:2A:0A:82:0A:9E",
+      "model": "Intelbras iMD 3C Black",
+      "user": "<<REMOVIDO: ver Vaultwarden>>",
+      "password": "<<REMOVIDO: ver Vaultwarden>>",
+      "notes": "Instalada por Ihon em 20/03/2026 (era da BA). Senha corrigida 14/06 para ac00ac00ac00ac (a Abcd1234#! dava 401 no snapshot e o carrier forcava offline; ac00 retorna JPEG)."
+    }
+  ],
+  "pjlink": {
+    "port": 4352,
+    "password": "",
+    "pollInterval": 30000
+  },
+  "audio": {
+    "openVolume": 50,
+    "closeVolume": 0,
+    "_comment": "Volume master do Windows do PC da obra (DRIFT) via scripts/audio-volume.ps1 (SetMasterVolumeLevel dB). Open restaura openVolume, close zera."
+  },
+  "schedule": {
+    "enabled": true,
+    "timezone": "America/Sao_Paulo",
+    "days": {
+      "sun": {
+        "open": "07:30",
+        "close": "21:00"
+      },
+      "mon": {
+        "open": "07:30",
+        "close": "21:00"
+      },
+      "tue": {
+        "open": "07:30",
+        "close": "21:00"
+      },
+      "wed": {
+        "open": "07:30",
+        "close": "21:00"
+      },
+      "thu": {
+        "open": "07:30",
+        "close": "21:00"
+      },
+      "fri": {
+        "open": "07:30",
+        "close": "21:00"
+      },
+      "sat": {
+        "open": "07:30",
+        "close": "21:00"
+      }
+    },
+    "_comment": "Open 07:30 / close 21:00 todos os dias (Felipe, 20/06). Open: projetor ON + volume openVolume. Close: projetor OFF + volume closeVolume."
+  },
+  "cv": {
+    "enabled": false,
+    "_comment": "Carrier invisivel: contrato proibe CV/YOLO no drift-pc (GPU e da obra). Zonas da BA preservadas no config/beleza-astral.json se um dia rodar CV em outro host."
+  },
+  "server": {
+    "port": 3100,
+    "host": "0.0.0.0"
+  },
+  "portalSync": {
+    "enabled": true,
+    "url": "http://10.253.0.1:3000",
+    "apiKey": "<<REMOVIDO: ver Vaultwarden>>",
+    "interval": 30000,
+    "_comment": "URL via WireGuard hub: o AllowedIPs do drift nao cobre 192.168.15.x; validado em 11/06 que o Portal atende em 10.253.0.1:3000."
+  },
+  "_pendingCameras": [
+    {
+      "id": "cam-2",
+      "ip": "192.168.0.108",
+      "mac": "98:2A:0A:82:0A:C5",
+      "model": "Intelbras iMD 3C Black",
+      "status": "NAO-INSTALADA (4a camera, pendente Ihon) — removida do cameras ativo em 14/06"
+    }
+  ]
+}
